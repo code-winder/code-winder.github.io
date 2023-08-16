@@ -1,0 +1,895 @@
+<!DOCTYPE html><html lang="zh-CN" ><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><meta name="generator" content="Jekyll v4.3.2" /><meta property="og:title" content="go从bug中学习原理和优化" /><meta property="og:locale" content="zh_CN" /><meta name="description" content="本文通过讲解或制造bug来学习原理。并得到相应的优化手段。" /><meta property="og:description" content="本文通过讲解或制造bug来学习原理。并得到相应的优化手段。" /><link rel="canonical" href="//code-winder.github.io/2023/03/go.html" /><meta property="og:url" content="//code-winder.github.io/2023/03/go.html" /><meta property="og:site_name" content="Code-Winder" /><meta property="og:type" content="article" /><meta property="article:published_time" content="2023-03-29T10:02:40+08:00" /><meta name="twitter:card" content="summary" /><meta property="twitter:title" content="go从bug中学习原理和优化" /> <script type="application/ld+json"> {"@context":"https://schema.org","@type":"BlogPosting","dateModified":"2023-03-29T10:02:40+08:00","datePublished":"2023-03-29T10:02:40+08:00","description":"本文通过讲解或制造bug来学习原理。并得到相应的优化手段。","headline":"go从bug中学习原理和优化","mainEntityOfPage":{"@type":"WebPage","@id":"//code-winder.github.io/2023/03/go.html"},"url":"//code-winder.github.io/2023/03/go.html"}</script><title>go从bug中学习原理和优化 | Code-Winder</title><link rel="apple-touch-icon" sizes="180x180" href="/assets/img/favicons/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicons/favicon-32x32.png"><link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicons/favicon-16x16.png"><link rel="manifest" href="/assets/img/favicons/site.webmanifest"><link rel="shortcut icon" href="/assets/img/favicons/favicon.ico"><meta name="apple-mobile-web-app-title" content="Code-Winder"><meta name="application-name" content="Code-Winder"><meta name="msapplication-TileColor" content="#da532c"><meta name="msapplication-config" content="/assets/img/favicons/browserconfig.xml"><meta name="theme-color" content="#ffffff"><link rel="preconnect" href="https://fonts.googleapis.com" ><link rel="dns-prefetch" href="https://fonts.googleapis.com" ><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="dns-prefetch" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://fonts.googleapis.com" ><link rel="dns-prefetch" href="https://fonts.googleapis.com" ><link rel="preconnect" href="https://cdn.jsdelivr.net" ><link rel="dns-prefetch" href="https://cdn.jsdelivr.net" ><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato&family=Source+Sans+Pro:wght@400;600;700;900&display=swap"><link rel="preconnect" href="https://www.google-analytics.com" crossorigin="use-credentials"><link rel="dns-prefetch" href="https://www.google-analytics.com"><link rel="preconnect" href="https://www.googletagmanager.com" crossorigin="anonymous"><link rel="dns-prefetch" href="https://www.googletagmanager.com"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.1/css/all.min.css"><link rel="stylesheet" href="/assets/css/style.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/afeld/bootstrap-toc@1.0.1/dist/bootstrap-toc.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/magnific-popup@1.1.0/dist/magnific-popup.min.css"> <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.1/dist/jquery.min.js"></script> <script type="text/javascript"> class ModeToggle { static get MODE_KEY() { return "mode"; } static get MODE_ATTR() { return "data-mode"; } static get DARK_MODE() { return "dark"; } static get LIGHT_MODE() { return "light"; } static get ID() { return "mode-toggle"; } constructor() { if (this.hasMode) { if (this.isDarkMode) { if (!this.isSysDarkPrefer) { this.setDark(); } } else { if (this.isSysDarkPrefer) { this.setLight(); } } } let self = this; /* always follow the system prefers */ this.sysDarkPrefers.addEventListener("change", () => { if (self.hasMode) { if (self.isDarkMode) { if (!self.isSysDarkPrefer) { self.setDark(); } } else { if (self.isSysDarkPrefer) { self.setLight(); } } self.clearMode(); } self.notify(); }); } /* constructor() */ get sysDarkPrefers() { return window.matchMedia("(prefers-color-scheme: dark)"); } get isSysDarkPrefer() { return this.sysDarkPrefers.matches; } get isDarkMode() { return this.mode === ModeToggle.DARK_MODE; } get isLightMode() { return this.mode === ModeToggle.LIGHT_MODE; } get hasMode() { return this.mode != null; } get mode() { return sessionStorage.getItem(ModeToggle.MODE_KEY); } /* get the current mode on screen */ get modeStatus() { if (this.isDarkMode || (!this.hasMode && this.isSysDarkPrefer)) { return ModeToggle.DARK_MODE; } else { return ModeToggle.LIGHT_MODE; } } setDark() { $('html').attr(ModeToggle.MODE_ATTR, ModeToggle.DARK_MODE); sessionStorage.setItem(ModeToggle.MODE_KEY, ModeToggle.DARK_MODE); } setLight() { $('html').attr(ModeToggle.MODE_ATTR, ModeToggle.LIGHT_MODE); sessionStorage.setItem(ModeToggle.MODE_KEY, ModeToggle.LIGHT_MODE); } clearMode() { $('html').removeAttr(ModeToggle.MODE_ATTR); sessionStorage.removeItem(ModeToggle.MODE_KEY); } /* Notify another plugins that the theme mode has changed */ notify() { window.postMessage({ direction: ModeToggle.ID, message: this.modeStatus }, "*"); } } /* ModeToggle */ const toggle = new ModeToggle(); function flipMode() { if (toggle.hasMode) { if (toggle.isSysDarkPrefer) { if (toggle.isLightMode) { toggle.clearMode(); } else { toggle.setLight(); } } else { if (toggle.isDarkMode) { toggle.clearMode(); } else { toggle.setDark(); } } } else { if (toggle.isSysDarkPrefer) { toggle.setLight(); } else { toggle.setDark(); } } toggle.notify(); } /* flipMode() */ </script> <script> // 百度统计代码 var _hmt = _hmt || []; (function() { var hm = document.createElement("script"); hm.src = "https://hm.baidu.com/hm.js?e37ebacf05386ebe11672ab0dc609b69"; var s = document.getElementsByTagName("script")[0]; s.parentNode.insertBefore(hm, s); })(); </script> <script> // google analytics (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){ (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o), m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m) })(window,document,'script','https://www.google-analytics.com/analytics.js','ga'); ga('create', '{site.google_analytics_id}}', 'auto'); ga('send', 'pageview'); </script><body data-spy="scroll" data-target="#toc" data-topbar-visible="true"><div id="sidebar" class="d-flex flex-column align-items-end"><div class="profile-wrapper text-center"><div id="avatar"> <a href="/" class="mx-auto"> <img src="/assets/img/favicons/favicon.ico" alt="avatar" onerror="this.style.display='none'"> </a></div><div class="site-title"> <a href="/">Code-Winder</a></div><div class="site-subtitle font-italic">灵感源于好奇</div></div><ul class="w-100"><li class="nav-item"> <a href="/" class="nav-link"> <i class="fa-fw fas fa-home ml-xl-3 mr-xl-3 unloaded"></i> <span>首页</span> </a><li class="nav-item"> <a href="/categories/" class="nav-link"> <i class="fa-fw fas fa-stream ml-xl-3 mr-xl-3 unloaded"></i> <span>分类</span> </a><li class="nav-item"> <a href="/tags/" class="nav-link"> <i class="fa-fw fas fa-tag ml-xl-3 mr-xl-3 unloaded"></i> <span>标签</span> </a><li class="nav-item"> <a href="/archives/" class="nav-link"> <i class="fa-fw fas fa-archive ml-xl-3 mr-xl-3 unloaded"></i> <span>归档</span> </a><li class="nav-item"> <a href="/about/" class="nav-link"> <i class="fa-fw fas fa-info-circle ml-xl-3 mr-xl-3 unloaded"></i> <span>关于</span> </a></ul><div class="sidebar-bottom mt-auto d-flex flex-wrap justify-content-center align-items-center"> <button class="mode-toggle btn" aria-label="Switch Mode"> <i class="fas fa-adjust"></i> </button> <span class="icon-border"></span> <a href="https://github.com/code-winder" aria-label="github" target="_blank" rel="noopener"> <i class="fab fa-github"></i> </a> <a href=" javascript:location.href = 'mailto:' + ['414834682','qq.com'].join('@')" aria-label="email" > <i class="fas fa-envelope"></i> </a> <a href="/feed.xml" aria-label="rss" > <i class="fas fa-rss"></i> </a></div></div><div id="topbar-wrapper"><div id="topbar" class="container d-flex align-items-center justify-content-between h-100 pl-3 pr-3 pl-md-4 pr-md-4"> <i class="fas fa-list-alt fa-fw" id="content-list"></i> <span id="breadcrumb"> <span> <a href="/"> 首页 </a> </span> <span>go从bug中学习原理和优化</span> </span> <i id="sidebar-trigger" class="fas fa-bars fa-fw"></i><div id="topbar-title"> 文章</div><i id="search-trigger" class="fas fa-search fa-fw"></i> <span id="search-wrapper" class="align-items-center"> <i class="fas fa-search fa-fw"></i> <input class="form-control" id="search-input" type="search" aria-label="search" autocomplete="off" placeholder="搜索..."> </span> <span id="search-cancel" >X</span></div></div><div id="main-wrapper" class="d-flex justify-content-center"><div id="main" class="container pl-xl-4 pr-xl-4"><div class="row"><div id="core-wrapper" class="col-12 col-lg-11 col-xl-9 pr-xl-4"><div class="post pl-1 pr-1 pl-md-2 pr-md-2"><h1 class="title_class" data-toc-skip>go从bug中学习原理和优化</h1><div id="label_center"><div class="label"><div class="label-card"></div><div class="label-card"> <span class="categories"> <i class="fa fa-th-list"></i> <a href="/categories/%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80" title="Category: 编程语言" rel="category">编程语言</a> </span></div><div class="label-card"> <span class="pageTag"> <i class="fa fa-tags"></i> <a href="/tags/go" title="Tag: Go" rel="tag">Go</a> </span></div></div></div><div class="post-meta text-muted"> <span> 发表于 <em class="" data-ts="1680055360" data-df="YYYY/MM/DD" data-toggle="tooltip" data-placement="bottom"> 2023/03/29 </em> </span><div class="d-flex justify-content-between"> <span> 作者 <em> <a href="https://github.com/code-winder">code-winder</a> </em> </span><div> <span class="readtime" data-toggle="tooltip" data-placement="bottom" title="19483 字"> <em>108 分钟</em>阅读</span></div></div></div><div class="post-content"><blockquote><p>本文通过讲解或制造bug来学习原理。并得到相应的优化手段。</p></blockquote><ul id="markdown-toc"><li><a href="#测试工具" id="markdown-toc-测试工具">测试工具</a><ul><li><a href="#官方原生测试包" id="markdown-toc-官方原生测试包">官方原生测试包</a><ul><li><a href="#testingt" id="markdown-toc-testingt">testing.T</a><li><a href="#testingf" id="markdown-toc-testingf">testing.F</a><li><a href="#testingb" id="markdown-toc-testingb">testing.B</a><li><a href="#testingm" id="markdown-toc-testingm">testing.M</a><li><a href="#testingpb" id="markdown-toc-testingpb">testing.PB</a><li><a href="#testdata-目录和-golden-文件" id="markdown-toc-testdata-目录和-golden-文件">testdata 目录和 Golden 文件</a><li><a href="#帮助函数" id="markdown-toc-帮助函数">帮助函数</a><li><a href="#示例文件" id="markdown-toc-示例文件">示例文件</a><li><a href="#跳过函数" id="markdown-toc-跳过函数">跳过函数</a><li><a href="#并发测试" id="markdown-toc-并发测试">并发测试</a></ul><li><a href="#testfy" id="markdown-toc-testfy">testfy</a><ul><li><a href="#assert-包" id="markdown-toc-assert-包">assert 包</a><li><a href="#require-包" id="markdown-toc-require-包">require 包</a><li><a href="#测试套件-suite" id="markdown-toc-测试套件-suite">测试套件 suite</a></ul><li><a href="#goconvey" id="markdown-toc-goconvey">goconvey</a><li><a href="#mock测试" id="markdown-toc-mock测试">mock测试</a><ul><li><a href="#mock测试的缺陷" id="markdown-toc-mock测试的缺陷">mock测试的缺陷</a><li><a href="#不用mock怎么写单元测试" id="markdown-toc-不用mock怎么写单元测试">不用Mock怎么写（单元）测试</a><li><a href="#业务测试" id="markdown-toc-业务测试">业务测试</a><li><a href="#gomonkey" id="markdown-toc-gomonkey">gomonkey</a><li><a href="#mock易用工具" id="markdown-toc-mock易用工具">mock易用工具</a></ul><li><a href="#其他参考文献" id="markdown-toc-其他参考文献">其他参考文献</a></ul><li><a href="#性能检测工具" id="markdown-toc-性能检测工具">性能检测工具</a><ul><li><a href="#pprof" id="markdown-toc-pprof">pprof</a><ul><li><a href="#使用场景" id="markdown-toc-使用场景">使用场景</a><li><a href="#分析" id="markdown-toc-分析">分析</a><li><a href="#其他类似工具" id="markdown-toc-其他类似工具">其他类似工具</a></ul><li><a href="#trace" id="markdown-toc-trace">trace</a><ul><li><a href="#引入trace" id="markdown-toc-引入trace">引入trace</a><li><a href="#可视化界面解读" id="markdown-toc-可视化界面解读">可视化界面解读</a></ul></ul><li><a href="#常见优化" id="markdown-toc-常见优化">常见优化</a><ul><li><a href="#优化gc" id="markdown-toc-优化gc">优化GC</a><ul><li><a href="#传统的gc算法" id="markdown-toc-传统的gc算法">传统的GC算法</a><li><a href="#go-gc-算法" id="markdown-toc-go-gc-算法">Go GC 算法</a><ul><li><a href="#三色标记法" id="markdown-toc-三色标记法">三色标记法</a><li><a href="#gc过程" id="markdown-toc-gc过程">GC过程</a><li><a href="#gc优化" id="markdown-toc-gc优化">GC优化</a><li><a href="#gc分析工具" id="markdown-toc-gc分析工具">GC分析工具</a><li><a href="#gc源码导读" id="markdown-toc-gc源码导读">GC源码导读</a><ul><li><a href="#源码文件位置" id="markdown-toc-源码文件位置">源码文件位置</a><li><a href="#触发gc链路" id="markdown-toc-触发gc链路">触发GC链路</a><li><a href="#标记准备" id="markdown-toc-标记准备">标记准备</a><li><a href="#并发标记" id="markdown-toc-并发标记">并发标记</a><li><a href="#标记清扫" id="markdown-toc-标记清扫">标记清扫</a></ul></ul><li><a href="#逃逸分析" id="markdown-toc-逃逸分析">逃逸分析</a><ul><li><a href="#逃逸策略" id="markdown-toc-逃逸策略">逃逸策略</a><li><a href="#逃逸场景" id="markdown-toc-逃逸场景">逃逸场景</a><li><a href="#逃逸总结" id="markdown-toc-逃逸总结">逃逸总结</a></ul></ul><li><a href="#其他优化" id="markdown-toc-其他优化">其他优化</a><ul><li><a href="#性能诊断" id="markdown-toc-性能诊断">性能诊断</a><li><a href="#优化定时器" id="markdown-toc-优化定时器">优化定时器</a><li><a href="#类型或数据结构优化" id="markdown-toc-类型或数据结构优化">类型或数据结构优化</a><li><a href="#cgo或跨语言调用优化" id="markdown-toc-cgo或跨语言调用优化">cgo或跨语言调用优化</a><li><a href="#低级优化" id="markdown-toc-低级优化">低级优化</a><li><a href="#综合优化" id="markdown-toc-综合优化">综合优化</a></ul></ul><li><a href="#原理篇" id="markdown-toc-原理篇">原理篇</a><ul><li><a href="#参考文档" id="markdown-toc-参考文档">参考文档</a></ul><li><a href="#第三方库" id="markdown-toc-第三方库">第三方库</a><li><a href="#常见bug和分析" id="markdown-toc-常见bug和分析">常见bug和分析</a><li><a href="#其他工具" id="markdown-toc-其他工具">其他工具</a></ul><h1 id="测试工具">测试工具</h1><p>测试在原型开发和实际开发、bug复现和技术学习等中，都至关重要。因此，掌握适当的工具，可以简化测试，提高测试效率， 进而使测试起来简单、可复用。也就使开发人员更容易和愿意去做这种保质且划算的测试。</p><p>以下列举的单元测试工具展示了一个发展流程，对于非mock测试：</p><ul><li>简单断言或结果打印，可使用<code class="language-plaintext highlighter-rouge">官方原生测试包</code><li>含各场景分组测试、可读性强、长期维护的测试用例，复杂断言等，可使用<code class="language-plaintext highlighter-rouge">testfy</code>(推荐)</ul><p>这里简单总结一下几个测试框架：个人觉得 GoConvey 的语法 对业务代码侵入有点严重， 而且理解它本身也需要一些时间成本，比如 testify 逻辑清晰。单元测试逻辑本身就要求比较简单， 综上，还是更推荐用 testify。</p><h2 id="官方原生测试包"><span class="mr-2">官方原生测试包</span><a href="#官方原生测试包" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><p>在testing包中包含一下结构体:</p><ul><li><code class="language-plaintext highlighter-rouge">testing.T</code>: 这就是我们平常使用的单元测试<li><code class="language-plaintext highlighter-rouge">testing.F</code>: 模糊测试, 可以自动生成测试用例<li><code class="language-plaintext highlighter-rouge">testing.B</code>: 基准测试. 对函数的运行时间进行统计.<li><code class="language-plaintext highlighter-rouge">testing.M</code>: 测试的钩子函数, 可预置测试前后的操作.<li><code class="language-plaintext highlighter-rouge">testing.PB</code>: 测试时并行执行.</ul><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre><td class="rouge-code"><pre><span class="c">// 此方法源自 Go 官方文档</span>
+<span class="k">func</span> <span class="n">Reverse</span><span class="p">(</span><span class="n">s</span> <span class="kt">string</span><span class="p">)</span> <span class="kt">string</span> <span class="p">{</span>
+    <span class="n">bs</span> <span class="o">:=</span> <span class="p">[]</span><span class="kt">byte</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="n">length</span> <span class="o">:=</span> <span class="nb">len</span><span class="p">(</span><span class="n">bs</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="o">:=</span> <span class="m">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">length</span><span class="o">/</span><span class="m">2</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span> <span class="p">{</span>
+        <span class="n">bs</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">bs</span><span class="p">[</span><span class="n">length</span><span class="o">-</span><span class="n">i</span><span class="o">-</span><span class="m">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">bs</span><span class="p">[</span><span class="n">length</span><span class="o">-</span><span class="n">i</span><span class="o">-</span><span class="m">1</span><span class="p">],</span> <span class="n">bs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="kt">string</span><span class="p">(</span><span class="n">bs</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></table></code></div></div><h3 id="testingt"><span class="mr-2">testing.T</span><a href="#testingt" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>Go对单元测试函数要求如下</p><ul><li>文件名形如: <code class="language-plaintext highlighter-rouge">xxx_test.go</code><li>函数签名形如: <code class="language-plaintext highlighter-rouge">func TestXxx(t *testing.T)</code></ul><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">TestReverse</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+	<span class="n">str</span> <span class="o">:=</span> <span class="s">"abc"</span>
+	<span class="n">revStr1</span> <span class="o">:=</span> <span class="n">Reverse</span><span class="p">(</span><span class="n">str</span><span class="p">)</span>
+	<span class="n">revStr2</span> <span class="o">:=</span> <span class="n">Reverse</span><span class="p">(</span><span class="n">revStr1</span><span class="p">)</span>
+	<span class="k">if</span> <span class="n">str</span> <span class="o">!=</span> <span class="n">revStr2</span> <span class="p">{</span>
+		<span class="c">// error 方法报错后, 会继续向下执行</span>
+		<span class="n">t</span><span class="o">.</span><span class="n">Error</span><span class="p">(</span><span class="s">"error"</span><span class="p">)</span>
+		<span class="c">// fatal 方法报错后, 会退出测试</span>
+		<span class="c">// t.Fatal("fatal")</span>
+		<span class="c">// 输出调试信息</span>
+		<span class="c">// t.Log("log")</span>
+		<span class="c">// 测试中断, 但是测试结果不会十遍</span>
+		<span class="c">// t.Skip("skip")</span>
+	<span class="p">}</span>
+
+	<span class="c">// 可启动多个子测试, 子测试之间并行运行</span>
+	<span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">str</span> <span class="o">=</span> <span class="k">range</span> <span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">"abcd"</span><span class="p">,</span> <span class="s">"aceb"</span><span class="p">}</span> <span class="p">{</span>
+    <span class="c">// 第一个参数为子测试的标识</span>
+		<span class="n">t</span><span class="o">.</span><span class="n">Run</span><span class="p">(</span><span class="n">str</span><span class="p">,</span> <span class="k">func</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+			<span class="n">revStr1</span> <span class="o">:=</span> <span class="n">Reverse</span><span class="p">(</span><span class="n">str</span><span class="p">)</span>
+			<span class="n">revStr2</span> <span class="o">:=</span> <span class="n">Reverse</span><span class="p">(</span><span class="n">revStr1</span><span class="p">)</span>
+			<span class="k">if</span> <span class="n">str</span> <span class="o">!=</span> <span class="n">revStr2</span> <span class="p">{</span>
+				<span class="n">t</span><span class="o">.</span><span class="n">Error</span><span class="p">(</span><span class="s">"error"</span><span class="p">)</span>
+			<span class="p">}</span>
+		<span class="p">})</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>下面将要测试的每种情况列举出来，然后针对每个整数调用ToRoman()函数，比较返回的罗马数字字符串和错误值是否与预期的相符。后续要添加新的测试用例也很方便。 表格驱动测试示例如下（表驱动测试中testCases结构中加一个场景描述字段，可以提高可读性）：</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">TestToRoman</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">testCases</span> <span class="o">:=</span> <span class="p">[]</span><span class="k">struct</span> <span class="p">{</span>
+    <span class="n">num</span>    <span class="kt">int</span>
+    <span class="n">expect</span> <span class="kt">string</span>
+    <span class="n">err</span>    <span class="kt">error</span>
+  <span class="p">}{</span>
+    <span class="p">{</span><span class="m">0</span><span class="p">,</span> <span class="s">""</span><span class="p">,</span> <span class="n">ErrOutOfRange</span><span class="p">},</span>
+    <span class="p">{</span><span class="m">1</span><span class="p">,</span> <span class="s">"I"</span><span class="p">,</span> <span class="no">nil</span><span class="p">},</span>
+    <span class="p">{</span><span class="m">500</span><span class="p">,</span> <span class="s">"D"</span><span class="p">,</span> <span class="no">nil</span><span class="p">},</span>
+    <span class="p">{</span><span class="m">1000</span><span class="p">,</span> <span class="s">"M"</span><span class="p">,</span> <span class="no">nil</span><span class="p">},</span>
+    <span class="p">{</span><span class="m">31</span><span class="p">,</span> <span class="s">"XXXI"</span><span class="p">,</span> <span class="no">nil</span><span class="p">},</span>
+    <span class="p">{</span><span class="m">312</span><span class="p">,</span> <span class="s">"CCCXII"</span><span class="p">,</span> <span class="no">nil</span><span class="p">},</span>
+    <span class="p">{</span><span class="m">4000</span><span class="p">,</span> <span class="s">""</span><span class="p">,</span> <span class="n">ErrOutOfRange</span><span class="p">},</span>
+  <span class="p">}</span>
+
+  <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">testCase</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">testCases</span> <span class="p">{</span>
+    <span class="n">got</span><span class="p">,</span> <span class="n">err</span> <span class="o">:=</span> <span class="n">ToRoman</span><span class="p">(</span><span class="n">testCase</span><span class="o">.</span><span class="n">num</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">got</span> <span class="o">!=</span> <span class="n">testCase</span><span class="o">.</span><span class="n">expect</span> <span class="p">{</span>
+      <span class="n">t</span><span class="o">.</span><span class="n">Errorf</span><span class="p">(</span><span class="s">"ToRoman(%d) expect:%s got:%s"</span><span class="p">,</span> <span class="n">testCase</span><span class="o">.</span><span class="n">num</span><span class="p">,</span> <span class="n">testCase</span><span class="o">.</span><span class="n">expect</span><span class="p">,</span> <span class="n">got</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">err</span> <span class="o">!=</span> <span class="n">testCase</span><span class="o">.</span><span class="n">err</span> <span class="p">{</span>
+      <span class="n">t</span><span class="o">.</span><span class="n">Errorf</span><span class="p">(</span><span class="s">"ToRoman(%d) expect error:%v got:%v"</span><span class="p">,</span> <span class="n">testCase</span><span class="o">.</span><span class="n">num</span><span class="p">,</span> <span class="n">testCase</span><span class="o">.</span><span class="n">err</span><span class="p">,</span> <span class="n">err</span><span class="p">)</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>有时候对同一个函数有不同维度的测试，将这些组合在一起有利于维护。例如上面对ToRoman()函数的测试可以分为非法值，单个罗马字符和普通 3 种情况。</p><p>使用如下命令运行测试用例(test.run 指定运行某一个函数):</p><div class="language-shell highlighter-rouge"><div class="code-header"> <span data-label-text="Shell"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre><td class="rouge-code"><pre>go <span class="nb">test</span> <span class="nt">-test</span>.run TestReverse
+</pre></table></code></div></div><h3 id="testingf"><span class="mr-2">testing.F</span><a href="#testingf" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>用于模糊测试, 会自动生成测试用例。其内部会自动生成各种测试用例, 并自动调用执行。 Go对模糊测试的函数要求如下:</p><ul><li>文件名形如: <code class="language-plaintext highlighter-rouge">xxx_test.go</code><li>函数签名形如: <code class="language-plaintext highlighter-rouge">func FuzzXxx(f *testing.F)</code></ul><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">FuzzReverse</span><span class="p">(</span><span class="n">f</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">F</span><span class="p">)</span> <span class="p">{</span>
+	<span class="c">// 设置测试用例需要随机生成的变量类型</span>
+	<span class="n">f</span><span class="o">.</span><span class="n">Add</span><span class="p">(</span><span class="s">"Hello, world!"</span><span class="p">)</span>
+	<span class="c">// 生成测试用例并进行测试. 回电函数接收的参数, 与 f.Add 设置的参数类型一致</span>
+	<span class="n">f</span><span class="o">.</span><span class="n">Fuzz</span><span class="p">(</span><span class="k">func</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="n">str</span> <span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">revStr1</span> <span class="o">:=</span> <span class="n">Reverse</span><span class="p">(</span><span class="n">str</span><span class="p">)</span>
+		<span class="n">revStr2</span> <span class="o">:=</span> <span class="n">Reverse</span><span class="p">(</span><span class="n">revStr1</span><span class="p">)</span>
+		<span class="k">if</span> <span class="n">revStr2</span> <span class="o">!=</span> <span class="n">str</span> <span class="p">{</span>
+			<span class="n">t</span><span class="o">.</span><span class="n">Error</span><span class="p">(</span><span class="s">"error"</span><span class="p">)</span>
+		<span class="p">}</span>
+
+		<span class="c">// 判断是否是合法的 utf8 编码</span>
+		<span class="k">if</span> <span class="n">utf8</span><span class="o">.</span><span class="n">ValidString</span><span class="p">(</span><span class="n">str</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">utf8</span><span class="o">.</span><span class="n">ValidString</span><span class="p">(</span><span class="n">revStr1</span><span class="p">)</span> <span class="p">{</span>
+			<span class="n">t</span><span class="o">.</span><span class="n">Error</span><span class="p">(</span><span class="s">"utf8 error"</span><span class="p">)</span>
+		<span class="p">}</span>
+	<span class="p">})</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>运行命令开始测试: <code class="language-plaintext highlighter-rouge">go test -test.fuzz FuzzReverse -test.run ^$</code> (其中test.run指定不运行test函数)。 模糊测试的难点在于，即使测试用例是随机的，也需要像上面示例那样有办法验证其正确性。</p><h3 id="testingb"><span class="mr-2">testing.B</span><a href="#testingb" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>用于基准测试. 对函数的运行时间进行统计, 对函数要求如下:</p><ul><li>文件名形如: <code class="language-plaintext highlighter-rouge">xxx_test.go</code><li>函数签名形如: <code class="language-plaintext highlighter-rouge">func BenchmarkXxx(b *testing.B)</code></ul><p>运行命令: <code class="language-plaintext highlighter-rouge">go test -test.bench BenchmarkReverse -test.run ^$</code></p><p>结果中指出了运行次数及平均时间. 其中各项值的含义如下:</p><ul><li>100000000: 迭代次数<li>ns/op: 平均每次迭代消耗的时间<li>B/op: 平均每次迭代消耗的内存<li>allocs/op: 平均每次迭代内存的分配次数</ul><h3 id="testingm"><span class="mr-2">testing.M</span><a href="#testingm" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>定义在运行测试的前后执行的操作. 对函数的要求如下:</p><ul><li>文件名形如: <code class="language-plaintext highlighter-rouge">xxx_test.go</code><li>函数签名为: <code class="language-plaintext highlighter-rouge">func TestMain(m *testing.M)</code></ul><p>函数定义如下：</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">TestMain</span><span class="p">(</span><span class="n">m</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">M</span><span class="p">)</span> <span class="p">{</span>
+	<span class="c">// 测试之前执行的操作</span>
+	<span class="n">fmt</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="s">"starting test main"</span><span class="p">)</span>
+	<span class="c">// 运行测试</span>
+	<span class="n">code</span> <span class="o">:=</span> <span class="n">m</span><span class="o">.</span><span class="n">Run</span><span class="p">()</span>
+	<span class="c">// 测试之后执行的操作</span>
+	<span class="n">fmt</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="s">"ending test main"</span><span class="p">)</span>
+	<span class="n">os</span><span class="o">.</span><span class="n">Exit</span><span class="p">(</span><span class="n">code</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>此函数会在运行所有测试时自动调用.</p><h3 id="testingpb"><span class="mr-2">testing.PB</span><a href="#testingpb" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>用于在测试时进行并发测试. 上面的”单元测试/模糊测试/基准测试”都可以使用. 以基准测试为例, 使用如下:</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre><td class="rouge-code"><pre><span class="c">// 充分利用 CPU 资源, 并行执行 n 次</span>
+<span class="k">func</span> <span class="n">BenchmarkReverse2</span><span class="p">(</span><span class="n">b</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">B</span><span class="p">)</span> <span class="p">{</span>
+	<span class="n">b</span><span class="o">.</span><span class="n">RunParallel</span><span class="p">(</span><span class="k">func</span><span class="p">(</span><span class="n">pb</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">PB</span><span class="p">)</span> <span class="p">{</span>
+		<span class="k">for</span> <span class="n">pb</span><span class="o">.</span><span class="n">Next</span><span class="p">()</span> <span class="p">{</span>
+			<span class="c">// 此循环体总共执行 b.N 次</span>
+			<span class="n">Reverse</span><span class="p">(</span><span class="s">"hello"</span><span class="p">)</span>
+		<span class="p">}</span>
+	<span class="p">})</span>
+<span class="p">}</span>
+
+</pre></table></code></div></div><h3 id="testdata-目录和-golden-文件"><span class="mr-2">testdata 目录和 Golden 文件</span><a href="#testdata-目录和-golden-文件" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>这个也是一个比较特殊的目录，go build 编译时，会自动忽略 testdata 目录， 并且在运行 go test 指令时，会将 test 文件所在目录设置为根目录， 可以直接使用相对路径 testdata 引入或者存储相关文件。</p><p>简而言之，testdata 目录的使用场景，就是能够很直观的通过文件内容对比， 发现测试结果是否符合预期，适用于输入输出都比较复杂的情况。</p><p>go 官方标准库 cmd/gofmt/gofmt_test.go 源码中就有用到，可参考。</p><p>我们可以将期望输出存储在一个名为 .golden 的文件中并提供一个 flag 来更新它。 这个技巧使你得以测试复杂的输出而无需硬编码。这里是例子：</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre><td class="rouge-code"><pre><span class="k">var</span> <span class="n">update</span> <span class="o">=</span> <span class="n">flag</span><span class="o">.</span><span class="n">Bool</span><span class="p">(</span><span class="s">"update"</span><span class="p">,</span> <span class="no">false</span><span class="p">,</span> <span class="s">"update .golden files"</span><span class="p">)</span>
+<span class="k">func</span> <span class="n">TestSomething</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">actual</span> <span class="o">:=</span> <span class="n">doSomething</span><span class="p">()</span>
+    <span class="n">Golden</span> <span class="o">:=</span> <span class="n">filepath</span><span class="o">.</span><span class="n">Join</span><span class="p">(</span><span class="s">"testdata"</span><span class="p">,</span> <span class="n">tc</span><span class="o">.</span><span class="n">Name</span><span class="o">+</span> <span class="s">".golden"</span> <span class="p">)</span>
+    <span class="k">if</span> <span class="o">*</span><span class="n">update</span> <span class="p">{</span>
+        <span class="n">ioutil</span><span class="o">.</span><span class="n">WriteFile</span><span class="p">(</span><span class="n">golden</span><span class="p">,</span> <span class="n">actual</span><span class="p">,</span> <span class="m">0644</span><span class="p">)</span>
+    <span class="p">}</span>
+    <span class="n">expected</span><span class="p">,</span> <span class="n">_</span> <span class="o">:=</span> <span class="n">ioutil</span><span class="o">.</span><span class="n">ReadFile</span><span class="p">(</span><span class="n">golden</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="o">!</span><span class="n">bytes</span><span class="o">.</span><span class="n">Equal</span><span class="p">(</span><span class="n">actual</span><span class="p">,</span> <span class="n">expected</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c">// FAIL!</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></table></code></div></div><h3 id="帮助函数"><span class="mr-2">帮助函数</span><a href="#帮助函数" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>Helper()函数将当前所在的函数标记为测试帮助方法。当打印文件和代码行信息时，该方法会被跳过。 Go 语言在 1.9 版本中引入了 t.Helper()，用于标注该函数是帮助函数，报错时将输出帮助函数调用者的信息，而不是帮助函数的内部信息。</p><p>关于 helper 函数的 2 个建议：</p><ul><li>不要返回错误， 帮助函数内部直接使用 t.Error 或 t.Fatal 即可，在用例主逻辑中不会因为太多的错误处理代码，影响可读性。<li>调用 t.Helper() 让报错信息更准确，有助于定位。</ul><h3 id="示例文件"><span class="mr-2">示例文件</span><a href="#示例文件" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>测试工具包还能运行和验证示例代码。示例函数包含一个结论行注释，该注释以Output:开头，然后比较示例函数的标准输出和注释中的内容。</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">ExampleHello</span><span class="p">()</span> <span class="p">{</span>
+   <span class="n">fmt</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="s">"hello"</span><span class="p">)</span>
+   <span class="c">// Output: hello</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">ExampleSalutations</span><span class="p">()</span> <span class="p">{</span>
+   <span class="n">fmt</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="s">"hello, and"</span><span class="p">)</span>
+   <span class="n">fmt</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="s">"goodbye"</span><span class="p">)</span>
+   <span class="c">// Output:</span>
+   <span class="c">// hello, and</span>
+   <span class="c">// goodbye</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>Unordered output的前缀注释将匹配任意的行顺序。</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">ExamplePerm</span><span class="p">()</span> <span class="p">{</span>
+   <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">value</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">Perm</span><span class="p">(</span><span class="m">5</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">fmt</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="c">// Unordered output: 4</span>
+   <span class="c">// 2</span>
+   <span class="c">// 1</span>
+   <span class="c">// 3</span>
+   <span class="c">// 0</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>不包含output注释的示例函数，将不会被执行。</p><h3 id="跳过函数"><span class="mr-2">跳过函数</span><a href="#跳过函数" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>功能测试或性能测试时可以跳过一些测试函数。</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">TestTimeConsuming</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+   <span class="k">if</span> <span class="n">testing</span><span class="o">.</span><span class="n">Short</span><span class="p">()</span> <span class="p">{</span>
+      <span class="n">t</span><span class="o">.</span><span class="n">Skip</span><span class="p">(</span><span class="s">"skipping test in short mode."</span><span class="p">)</span>
+   <span class="p">}</span>
+   <span class="o">...</span>
+<span class="p">}</span>
+</pre></table></code></div></div><h3 id="并发测试"><span class="mr-2">并发测试</span><a href="#并发测试" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>对于表驱动测试和子测试等，可以通过函数标记来进行并发测试。</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre><td class="rouge-code"><pre><span class="k">var</span> <span class="n">Cash</span> <span class="o">=</span> <span class="nb">make</span><span class="p">(</span><span class="k">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">)</span>
+
+<span class="k">func</span> <span class="n">Add</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="n">value</span> <span class="kt">string</span><span class="p">){</span>
+    <span class="k">if</span> <span class="n">_</span><span class="p">,</span><span class="n">ok</span> <span class="o">:=</span> <span class="n">Cash</span><span class="p">[</span><span class="n">key</span><span class="p">];</span><span class="o">!</span><span class="n">ok</span><span class="p">{</span>
+        <span class="n">Cash</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></table></code></div></div><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">TestCanParallelExecAdd</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">){</span>
+    <span class="k">var</span> <span class="n">addTests</span> <span class="o">=</span> <span class="p">[]</span><span class="k">struct</span><span class="p">{</span>
+        <span class="n">key</span> <span class="kt">string</span>
+        <span class="n">value</span> <span class="kt">string</span>
+        <span class="n">expected</span> <span class="kt">int</span>
+    <span class="p">}{</span>
+        <span class="p">{</span><span class="s">"a"</span><span class="p">,</span><span class="s">"aa"</span><span class="p">,</span><span class="m">1</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"b"</span><span class="p">,</span><span class="s">"bb"</span><span class="p">,</span><span class="m">2</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"c"</span><span class="p">,</span><span class="s">"cc"</span><span class="p">,</span><span class="m">3</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"c"</span><span class="p">,</span><span class="s">"cc"</span><span class="p">,</span><span class="m">3</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"c"</span><span class="p">,</span><span class="s">"cc"</span><span class="p">,</span><span class="m">3</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"d"</span><span class="p">,</span><span class="s">"dd"</span><span class="p">,</span><span class="m">4</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"e"</span><span class="p">,</span><span class="s">"ee"</span><span class="p">,</span><span class="m">5</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"f"</span><span class="p">,</span><span class="s">"ff"</span><span class="p">,</span><span class="m">6</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"g"</span><span class="p">,</span><span class="s">"gg"</span><span class="p">,</span><span class="m">7</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"h"</span><span class="p">,</span><span class="s">"hh"</span><span class="p">,</span><span class="m">8</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"i"</span><span class="p">,</span><span class="s">"ii"</span><span class="p">,</span><span class="m">9</span><span class="p">},</span>
+        <span class="p">{</span><span class="s">"j"</span><span class="p">,</span><span class="s">"jj"</span><span class="p">,</span><span class="m">10</span><span class="p">},</span>
+    <span class="p">}</span>
+
+    <span class="n">t</span><span class="o">.</span><span class="n">Parallel</span><span class="p">()</span>
+
+    <span class="n">quary</span> <span class="o">:=</span> <span class="n">rand</span><span class="o">.</span><span class="n">Int</span><span class="p">()</span>
+    <span class="n">t</span><span class="o">.</span><span class="n">Logf</span><span class="p">(</span><span class="s">"[goroutine:%d] start"</span><span class="p">,</span><span class="n">quary</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span><span class="n">v</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">addTests</span><span class="p">{</span>
+        <span class="n">Add</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">key</span><span class="p">,</span><span class="n">v</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">Logf</span><span class="p">(</span><span class="s">"[goroutine:%d] add %s:%s"</span><span class="p">,</span><span class="n">quary</span><span class="p">,</span><span class="n">v</span><span class="o">.</span><span class="n">key</span><span class="p">,</span><span class="n">v</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">Cash</span><span class="p">)</span> <span class="o">!=</span> <span class="n">v</span><span class="o">.</span><span class="n">expected</span><span class="p">{</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">Errorf</span><span class="p">(</span><span class="s">"add %s:%s len = %d; except %d"</span><span class="p">,</span><span class="n">v</span><span class="o">.</span><span class="n">key</span><span class="p">,</span><span class="n">v</span><span class="o">.</span><span class="n">value</span><span class="p">,</span><span class="nb">len</span><span class="p">(</span><span class="n">Cash</span><span class="p">),</span><span class="n">v</span><span class="o">.</span><span class="n">expected</span><span class="p">)</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="n">Clean</span><span class="p">()</span>
+<span class="p">}</span>
+</pre></table></code></div></div><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">TestParallelAdd</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">){</span>
+    <span class="k">for</span> <span class="n">i</span><span class="o">:=</span><span class="m">0</span><span class="p">;</span><span class="n">i</span><span class="o">&lt;</span><span class="m">10</span><span class="p">;</span><span class="n">i</span><span class="o">++</span><span class="p">{</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">Run</span><span class="p">(</span><span class="n">fmt</span><span class="o">.</span><span class="n">Sprintf</span><span class="p">(</span><span class="s">"g-%d"</span><span class="p">,</span><span class="n">i</span><span class="p">),</span> <span class="k">func</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">Parallel</span><span class="p">()</span>
+            <span class="n">TestAdd</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+        <span class="p">})</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></table></code></div></div><h2 id="testfy"><span class="mr-2">testfy</span><a href="#testfy" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><p>上节中官方原生测试包简单明了，但缺少很多高效简便的断言。testfy 在兼容官方原生测试包的 同时提供了简便的断言，提高了测试编码效率。</p><p>testify 有三个主要功能：</p><ul><li>断言，在 assert 包和 require 包。<li>Mocking，在 mock 包下。<li>测试组件，在 suite 包下。</ul><p>mock 简易使用 gomonkey，因此减少testfy时不讲其mock功能。</p><h3 id="assert-包"><span class="mr-2">assert 包</span><a href="#assert-包" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>assert 包提供了一系列很方便的断言方法，简化你的测试代码。如</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+</pre><td class="rouge-code"><pre><span class="k">package</span> <span class="n">yours</span>
+<span class="k">import</span> <span class="p">(</span>
+  <span class="s">"testing"</span>
+  <span class="s">"github.com/stretchr/testify/assert"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="n">TestSomething</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c">// 断言相等</span>
+  <span class="n">assert</span><span class="o">.</span><span class="n">Equal</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="m">123</span><span class="p">,</span> <span class="m">123</span><span class="p">,</span> <span class="s">"they should be equal"</span><span class="p">)</span>
+  <span class="c">// 断言不等</span>
+  <span class="n">assert</span><span class="o">.</span><span class="n">NotEqual</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="m">123</span><span class="p">,</span> <span class="m">456</span><span class="p">,</span> <span class="s">"they should not be equal"</span><span class="p">)</span>
+  <span class="c">// 断言为 nil</span>
+  <span class="n">assert</span><span class="o">.</span><span class="n">Nil</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">object</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>assert 包的函数的第一个参数为 testing.T，用于执行 go test 时输出信息。 如果你有很多个断言，可以调用New方法实例化 Assertions 结构体，然后就可以省略testing.T参数了。上面的代码，可以简化成</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">TestSomething</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c">// 实例化 assertion 结构体，下面的断言都不用传入 t 作为第一个参数了。</span>
+  <span class="n">assert</span> <span class="o">:=</span> <span class="n">assert</span><span class="o">.</span><span class="n">New</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+  <span class="c">// 断言相等</span>
+  <span class="n">assert</span><span class="o">.</span><span class="n">Equal</span><span class="p">(</span><span class="m">123</span><span class="p">,</span> <span class="m">123</span><span class="p">,</span> <span class="s">"they should be equal"</span><span class="p">)</span>
+  <span class="c">// 断言不等</span>
+  <span class="n">assert</span><span class="o">.</span><span class="n">NotEqual</span><span class="p">(</span><span class="m">123</span><span class="p">,</span> <span class="m">456</span><span class="p">,</span> <span class="s">"they should not be equal"</span><span class="p">)</span>
+  <span class="c">// 断言为 nil</span>
+  <span class="n">assert</span><span class="o">.</span><span class="n">Nil</span><span class="p">(</span><span class="n">object</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>assert 失败的话，底层调用 t.Errorf 来输出错误信息。也就是说，断言失败并不会中停止测试。 assert 包的断言函数，返回值是 bool 类型，表示断言的成功或失败。 我们可以根据返回值，进一步做断言。如</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre><td class="rouge-code"><pre><span class="c">// 当 object 不为 nil 的时候，进一步断言 object.Value 的值</span>
+<span class="k">if</span> <span class="n">assert</span><span class="o">.</span><span class="n">NotNil</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">object</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">assert</span><span class="o">.</span><span class="n">Equal</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="s">"Something"</span><span class="p">,</span> <span class="n">object</span><span class="o">.</span><span class="n">Value</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>assert 包提供的断言类型非常多，包括对比变量、json、目录、Http 响应等。 完整列表见<a href="https://pkg.go.dev/github.com/stretchr/testify@v1.8.1/assert#EqualValues">assert</a></p><h3 id="require-包"><span class="mr-2">require 包</span><a href="#require-包" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>require 包提供的函数和 assert 包是一样的，区别是：</p><ul><li>require 包如果断言失败，底层调用 t.FailNow， 会立刻中断当前的测试，所以也不会有返回值。<li>assert 包如果断言失败，底层调用 t.Errorf，返回 false，不会中断测试。</ul><h3 id="测试套件-suite"><span class="mr-2">测试套件 suite</span><a href="#测试套件-suite" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>如果你有别的面向对象语言的经验，用 suite 包写单元测试可能更符合你的习惯。 我们可以自定义一个结构体，它依赖 suite.Suite，它所有的以 Test 开头的函数，都是一个测试。 详见<a href="https://pkg.go.dev/github.com/stretchr/testify@v1.8.1/suite#SetupTestSuite">suite</a></p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+</pre><td class="rouge-code"><pre><span class="k">import</span> <span class="p">(</span>
+    <span class="s">"testing"</span>
+    <span class="s">"github.com/stretchr/testify/assert"</span>
+    <span class="s">"github.com/stretchr/testify/suite"</span>
+    <span class="s">"fmt"</span>
+<span class="p">)</span>
+<span class="c">// 依赖 suite.Suite</span>
+<span class="k">type</span> <span class="n">ExampleTestSuite</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">suite</span><span class="o">.</span><span class="n">Suite</span>
+    <span class="n">VariableThatShouldStartAtFive</span> <span class="kt">int</span>
+<span class="p">}</span>
+<span class="c">// 每个测试运行前，会执行</span>
+<span class="k">func</span> <span class="p">(</span><span class="n">suite</span> <span class="o">*</span><span class="n">ExampleTestSuite</span><span class="p">)</span> <span class="n">SetupTest</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">suite</span><span class="o">.</span><span class="n">VariableThatShouldStartAtFive</span> <span class="o">=</span> <span class="m">5</span>
+<span class="p">}</span>
+<span class="c">// 每个测试运行后，会执行</span>
+<span class="k">func</span> <span class="p">(</span><span class="n">suite</span> <span class="o">*</span><span class="n">ExampleTestSuite</span><span class="p">)</span> <span class="n">TearDownTest</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">fmt</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="s">"next test"</span><span class="p">)</span>
+<span class="p">}</span>
+<span class="c">// 所有以“Test”开头的方法，都是一个测试</span>
+<span class="k">func</span> <span class="p">(</span><span class="n">suite</span> <span class="o">*</span><span class="n">ExampleTestSuite</span><span class="p">)</span> <span class="n">TestExample</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">assert</span><span class="o">.</span><span class="n">Equal</span><span class="p">(</span><span class="n">suite</span><span class="o">.</span><span class="n">T</span><span class="p">(),</span> <span class="m">5</span><span class="p">,</span> <span class="n">suite</span><span class="o">.</span><span class="n">VariableThatShouldStartAtFive</span><span class="p">)</span>
+<span class="p">}</span>
+<span class="c">// 用于 'go test' 的入口</span>
+<span class="k">func</span> <span class="n">TestExampleTestSuite</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">suite</span><span class="o">.</span><span class="n">Run</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="nb">new</span><span class="p">(</span><span class="n">ExampleTestSuite</span><span class="p">))</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>suite 中有以下钩子：</p><ul><li>SetupTest：每个测试运行前，都会执行<li>TearDownTest： 每个测试之后，都会执行<li>SetupSuite： Suite 开始之前执行一次，在所有测试之前执行<li>TearDownSuite： Suite 结束之后执行一次，在所有测试之后执行</ul><h2 id="goconvey"><span class="mr-2">goconvey</span><a href="#goconvey" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><p>goconvey特别适合于BDD（行为驱动开发）。</p><p>行为驱动开发(Behavior Driven Development，BDD)借鉴了敏捷和精益实践， 让敏捷研发团队尽可能理解产品经理或业务人员的产品需求， 并在软件研发过程中及时反馈和演示软件产品的研发状态， 让产品经理或业务人员根据获得的产品研发信息及时对软件产品特性进行调整。 BDD帮助敏捷研发团队把精力集中在识别、理解和构建跟业务目标有关的产品特性上面， 并让敏捷研发团队能够确保识别出的产品特性能够被正确设计和实现出来。</p><p>BDD的产品研发流程如下：</p><ul><li>产品经理（业务人员）通过具体的用户故事使用场景来告诉软件需求分析人员他（她）想要什么样的软件产品。 使用软件产品的使用场景来描述软件需求可以尽可能的避免相关人员错误理解软件需求或增加自己的主观想象的需求。<li>软件需求分析人员（BA）和研发团队（研发人员、测试人员）一起对产品经理（业务人员）的用户故事进行分析， 并梳理出具体的软件产品使用场景举例，这些场景举例使用结构化的关键字自然语言进行描述，例如中文、英文等。<li>研发团队使用BDD工具把用户故事场景文件转化为可执行的自动化测试代码， 研发人员运行自动化测试用例来验证开发出来的软件产品是否符合用户故事场景的验收要求。<li>测试人员可以根据自动化测试结果开展手工测试和探索性测试。</ul><p>产品经理（业务人员）可以实时查看软件研发团队的自动化测试结果和BDD工具生成的测试报告，确保软件实现符合产品经理（业务人员）的软件期望。</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+</pre><td class="rouge-code"><pre><span class="c">// split.go</span>
+<span class="k">package</span> <span class="n">goconvey_demo</span>
+
+<span class="k">import</span> <span class="s">"strings"</span>
+
+<span class="c">// Split</span>
+<span class="c">//  @Description: 把字符串s按照给定的分隔符sep进行分割返回字符串切片</span>
+<span class="c">//  @param s</span>
+<span class="c">//  @param sep</span>
+<span class="c">//  @return result</span>
+<span class="c">//</span>
+<span class="k">func</span> <span class="n">Split</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">sep</span> <span class="kt">string</span><span class="p">)</span> <span class="p">(</span><span class="n">result</span> <span class="p">[]</span><span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+	<span class="n">result</span> <span class="o">=</span> <span class="nb">make</span><span class="p">([]</span><span class="kt">string</span><span class="p">,</span> <span class="m">0</span><span class="p">,</span> <span class="n">strings</span><span class="o">.</span><span class="n">Count</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">sep</span><span class="p">)</span><span class="o">+</span><span class="m">1</span><span class="p">)</span>
+	<span class="n">i</span> <span class="o">:=</span> <span class="n">strings</span><span class="o">.</span><span class="n">Index</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">sep</span><span class="p">)</span>
+	<span class="k">for</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="o">-</span><span class="m">1</span> <span class="p">{</span>
+		<span class="n">result</span> <span class="o">=</span> <span class="nb">append</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">s</span><span class="p">[</span><span class="o">:</span><span class="n">i</span><span class="p">])</span>
+		<span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="nb">len</span><span class="p">(</span><span class="n">sep</span><span class="p">)</span><span class="o">:</span><span class="p">]</span> <span class="c">// 使用len(sep)获取sep的长度</span>
+		<span class="n">i</span> <span class="o">=</span> <span class="n">strings</span><span class="o">.</span><span class="n">Index</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">sep</span><span class="p">)</span>
+	<span class="p">}</span>
+
+	<span class="n">result</span> <span class="o">=</span> <span class="nb">append</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+	<span class="k">return</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>普通测试文件如下：</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+</pre><td class="rouge-code"><pre><span class="c">// split_test.go</span>
+
+<span class="k">import</span> <span class="p">(</span>
+	<span class="s">"testing"</span>
+
+	<span class="n">c</span> <span class="s">"github.com/smartystreets/goconvey/convey"</span>  <span class="c">// 别名导入</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="n">TestSplit</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+	<span class="n">c</span><span class="o">.</span><span class="n">Convey</span><span class="p">(</span><span class="s">"基础用例"</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="k">func</span><span class="p">()</span> <span class="p">{</span>
+		<span class="k">var</span> <span class="p">(</span>
+			<span class="n">s</span>      <span class="o">=</span> <span class="s">"a:b:c"</span>
+			<span class="n">sep</span>    <span class="o">=</span> <span class="s">":"</span>
+			<span class="n">expect</span> <span class="o">=</span> <span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">"a"</span><span class="p">,</span> <span class="s">"b"</span><span class="p">,</span> <span class="s">"c"</span><span class="p">}</span>
+		<span class="p">)</span>
+		<span class="n">got</span> <span class="o">:=</span> <span class="n">Split</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">sep</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">.</span><span class="n">So</span><span class="p">(</span><span class="n">got</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">ShouldResemble</span><span class="p">,</span> <span class="n">expect</span><span class="p">)</span> <span class="c">// 断言</span>
+	<span class="p">})</span>
+
+	<span class="n">c</span><span class="o">.</span><span class="n">Convey</span><span class="p">(</span><span class="s">"不包含分隔符用例"</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="k">func</span><span class="p">()</span> <span class="p">{</span>
+		<span class="k">var</span> <span class="p">(</span>
+			<span class="n">s</span>      <span class="o">=</span> <span class="s">"a:b:c"</span>
+			<span class="n">sep</span>    <span class="o">=</span> <span class="s">"|"</span>
+			<span class="n">expect</span> <span class="o">=</span> <span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">"a:b:c"</span><span class="p">}</span>
+		<span class="p">)</span>
+		<span class="n">got</span> <span class="o">:=</span> <span class="n">Split</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">sep</span><span class="p">)</span>
+		<span class="n">c</span><span class="o">.</span><span class="n">So</span><span class="p">(</span><span class="n">got</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">ShouldResemble</span><span class="p">,</span> <span class="n">expect</span><span class="p">)</span> <span class="c">// 断言</span>
+	<span class="p">})</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>goconvey还支持在单元测试中根据需要嵌套调用和表格驱动，比如：</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+</pre><td class="rouge-code"><pre><span class="c">//</span>
+<span class="c">//  TestChildrenSplit</span>
+<span class="c">//  @Description: 嵌套调用</span>
+<span class="c">//  @param t</span>
+<span class="c">//</span>
+<span class="k">func</span> <span class="n">TestChildrenSplit</span><span class="p">(</span><span class="n">t</span> <span class="o">*</span><span class="n">testing</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="p">{</span>
+	<span class="c">// 只需要在顶层的Convey调用时传入t</span>
+	<span class="n">c</span><span class="o">.</span><span class="n">Convey</span><span class="p">(</span><span class="s">"分隔符在开头或者结尾用例"</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="k">func</span><span class="p">()</span> <span class="p">{</span>
+		<span class="n">tt</span> <span class="o">:=</span> <span class="p">[]</span><span class="k">struct</span> <span class="p">{</span>
+			<span class="n">name</span>   <span class="kt">string</span>
+			<span class="n">s</span>      <span class="kt">string</span>
+			<span class="n">sep</span>    <span class="kt">string</span>
+			<span class="n">expect</span> <span class="p">[]</span><span class="kt">string</span>
+		<span class="p">}{</span>
+			<span class="p">{</span><span class="s">"分隔符在开头"</span><span class="p">,</span> <span class="s">"1*2*3"</span><span class="p">,</span> <span class="s">"*"</span><span class="p">,</span> <span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">""</span><span class="p">,</span> <span class="s">"1"</span><span class="p">,</span> <span class="s">"2"</span><span class="p">,</span> <span class="s">"3"</span><span class="p">}},</span>
+			<span class="p">{</span><span class="s">"分隔符在结尾"</span><span class="p">,</span> <span class="s">"1+2+3+"</span><span class="p">,</span> <span class="s">"+"</span><span class="p">,</span> <span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">"1"</span><span class="p">,</span> <span class="s">"2"</span><span class="p">,</span> <span class="s">"3"</span><span class="p">,</span> <span class="s">""</span><span class="p">}},</span>
+		<span class="p">}</span>
+		<span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">tc</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">tt</span> <span class="p">{</span>
+			<span class="n">c</span><span class="o">.</span><span class="n">Convey</span><span class="p">(</span><span class="n">tc</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="k">func</span><span class="p">()</span> <span class="p">{</span>
+				<span class="c">// 嵌套调用Convery</span>
+				<span class="n">got</span> <span class="o">:=</span> <span class="n">Split</span><span class="p">(</span><span class="n">tc</span><span class="o">.</span><span class="n">s</span><span class="p">,</span> <span class="n">tc</span><span class="o">.</span><span class="n">sep</span><span class="p">)</span>
+				<span class="n">c</span><span class="o">.</span><span class="n">So</span><span class="p">(</span><span class="n">got</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">ShouldResemble</span><span class="p">,</span> <span class="n">tc</span><span class="o">.</span><span class="n">expect</span><span class="p">)</span>
+			<span class="p">})</span>
+		<span class="p">}</span>
+	<span class="p">})</span>
+
+<span class="p">}</span>
+</pre></table></code></div></div><p>GoConvey为我们提供了很多种类断言方法在So()函数中使用。</p><ul><li>一般相等类<li>数字数量比较类<li>包含类<li>字符串类<li>panic类<li>类型检查类<li>时间和时间间隔类</ul><p>如果上面列出来的断言方法都不能满足你的需要，那么你还可以按照下面的格式自定义一个断言方法。 除此之外，你还可以借助比如testfy的asset等第三方包。</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre><td class="rouge-code"><pre><span class="c">// 注意：&lt;&gt;中的内容是你需要按照实际需求替换的内容。</span>
+<span class="k">func</span> <span class="n">should</span><span class="o">&lt;</span><span class="n">do</span><span class="o">-</span><span class="n">something</span><span class="o">&gt;</span><span class="p">(</span><span class="n">actual</span> <span class="k">interface</span><span class="p">{},</span> <span class="n">expected</span> <span class="o">...</span><span class="k">interface</span><span class="p">{})</span> <span class="kt">string</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="o">&lt;</span><span class="n">some</span><span class="o">-</span><span class="n">important</span><span class="o">-</span><span class="n">condition</span><span class="o">-</span><span class="n">is</span><span class="o">-</span><span class="n">met</span><span class="p">(</span><span class="n">actual</span><span class="p">,</span> <span class="n">expected</span><span class="p">)</span><span class="o">&gt;</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="s">""</span>   <span class="c">// 返回空字符串表示断言通过</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="s">"&lt;一些描述性消息详细说明断言失败的原因...&gt;"</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>goconvey提供全自动的WebUI，只需要在项目目录下执行以下命令：<code class="language-plaintext highlighter-rouge">goconvey</code>。 默认就会在本机的8080端口提供WebUI界面，十分清晰地展现当前项目的单元测试数据。</p><h2 id="mock测试"><span class="mr-2">mock测试</span><a href="#mock测试" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><p>单元测试一般仅限于测试本服务，对于别的服务的调用（比如数据库）， 我们可以创建 Mock 对象来模拟对其他服务的调用。</p><p>什么时候适合 mock？ 如果一个对象具有以下特征，比较适合使用 mock 对象：</p><ul><li>该对象提供非确定的结果（比如当前的时间或者当前的温度）<li>对象的某些状态难以创建或者重现（比如网络错误或者文件读写错误）<li>对象方法上的执行太慢（比如在测试开始之前初始化数据库）<li>该对象还不存在或者其行为可能发生变化（比如测试驱动开发中驱动创建新的类）<li>该对象必须包含一些专门为测试准备的数据或者方法（后者不适用于静态类型的语言，流行的 mock 框架不能为对象添加新的方法， stub 是可以的）。</ul><p>因此，不要滥用 mock（stub），当被测方法中调用其他方法函数，第一反应应该走进去串起来，而不是从根部就 mock掉了。</p><h3 id="mock测试的缺陷"><span class="mr-2">mock测试的缺陷</span><a href="#mock测试的缺陷" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li>漏测关键逻辑：任何时候都要小心，被mock的对象其行为未必跟我们预期的一致（比如时区等）。<li>测试不存在的逻辑：mock的时候可能已经满足了某些前提，或者引入了额外的逻辑，而这些前提在实际中可能不存在。<li>漏测横切特性<li>掩盖坏味道：需要mock，可能是<ul><li>依赖过多<li>依赖过于分散：外部依赖没有恰当的封装和隔离<li>依赖的传递方式或隔离方式存在优化空间<li>过长的调用链</ul><li>掩盖性能缺陷：mock一般是直接返回结果，这很可能掩盖了被mock对象或函数的性能缺陷。<li>阻碍重构：强依赖mock，不便于测试，说明代码布局或分拆存在问题，应当优化功能划分或代码封装粒度等。<li>测试实现细节而非功能：应当测试功能或业务逻辑，而不是实现细节。</ul><p>单元测试是测试细节，但是测试的是业务细节，而不是实现细节。从测试的目的看，任何测试都应该是行为测试 或者业务逻辑测试。即我们测试的是系统或者组件有没有按照期望的方式返回结果。至于这个结果是怎么产生的 不应当是测试负责验证的事情（比如可以借用程序调试）。</p><p>值得指出的是，业务逻辑是层层下放的，也就是上一层的所有业务细节，一定在下一层有支撑。而一般情况下每一个方法 一定是应对一个业务需求（粒度大小不同）。</p><p>从投入产出比来看，为什么不要测试实现细节呢？</p><ul><li>实现细节变化快于其实现的业务变化频率，测试成本高；<li>同时，因为测试没有到达“边界”，实际上我们获得的信息是有限的。我们经常会发现测试基本上是在重复已实现的逻辑。</ul><h3 id="不用mock怎么写单元测试"><span class="mr-2">不用Mock怎么写（单元）测试</span><a href="#不用mock怎么写单元测试" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li>消除『单元』情结：<li>在很多人看来，单元测试就是测试一个类，甚至是一个方法。所有其他的因素全都应当屏蔽掉。 这不仅在原则上是错误的，实践上也几乎是不可能做到的。正确的测试单元应当是一个业务逻辑单元。<li>你的测试本身，而不仅是测试的方法名，应该是对于非开发人员也尽量是可读的。<li>对象创建与依赖注入：尽量通过函数参数(可以是结构体)把依赖传入，而不是在函数内部直接调用依赖（比如单例调用）。<li>考虑其他的间接测试方式： 变换测试粒度，或者间接测试等<li>文件、网络和数据库<li>可以尝试内存数据库或者docker容器<li>网络也有本地可执行的组件等替代手段，或者服务器上真实跑跑和观察更划算<li>文件也可采用内存文件系统，或者服务器上真实跑跑和观察更划算<li>MVC和容器<li>Reactive Programming：<li>响应式编程孤立尽量避免副作用，这使得一个方法几乎不会对外产生依赖。如果有依赖，也是另一个无副作用的依赖。<li>对于一个函数来说，一个输入无条件的对应一个确定的输出。所以，我们设计的方法往往很快到达“边界”。</ul><p>在纯粹的Functional Programming中，是不存在面向对象意义上的“对象”的。用户可以定义数据结构，其目的是作为参数 或者结果，而不是将操作和被操作的数据放到一起。从面向对象编程转向响应式编程的思维方式是一个非常大的转变。我们 也不能针对一个用面向对象思维设计出来的类以响应式编程的方式进行测试。</p><p>对于中间件的输入和输出可以通过依赖注入（比如mysql的连接通过函数参数或者结构体成员变量注入）和本地docker容器 来实施。而中间件所需的输入数据，可以通过数据文件或shell等脚本批量执行（可以不断复用）。</p><p>单元测试的粒度选择可参考<a href="https://www.163.com/dy/article/EMD4TASV0518R7MO.html">玩转Go单元测试，你只需要掌握这5点</a></p><h3 id="业务测试"><span class="mr-2">业务测试</span><a href="#业务测试" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>对于业务测试，可以使用类似配置文件的方式进行代码设计与测试：</p><ul><li>除了main入口之外，其中所有的业务代码和测试代码都共用<ul><li>正常的代码和测试代码分开文件夹存放<li>正常代码和测试代码入口分别是：main.go 和 test_main.go<li>main.go 和 test_main.go 中的主要代码流程也相同，只是参数或配置不同<li>参数或依赖注入的不同主要表现在：<ul><li>外部依赖的mock文件放在测试文件夹中<li>正常代码中要给出可以适配测试的初始化函数，比如文件路径、定时器时间周期等</ul></ul><li>通过第一步之后，制造适当输入即可覆盖所有正常场景和异常场景<li>如果输出也有依赖的话(比如输出到mq或数据库)，可以讲输出适配成log，通过log来查看输出<li>通过前面的步骤，就实现了输入和输出的隔离，不依赖任何外部程序的动态数据（依赖的可编译的第三方静态代码是没有任何问题的），可以达到：<ul><li>本地编译和无网络运行<li>测试和正常代码除了输入和输出有mock或不同外，中间的几乎所有的代码逻辑都是共用的<li>本地测试可代替大部分服务器上的测试，而小部分可通过以下过程实现：<ul><li>输入源输出目的地以及其他动态依赖可通过集成测试实现<li>开发之间的协议上的理解、产品与开发之间在业务场景理解上的差异，也是可以通过集成测试交互来识别或协同</ul></ul><li>这种测试的好处：<ul><li>可快速确保自身业务代码的测试覆盖率、测试简便性、测试的可复用性<li>当业务逻辑发生变化时，只要外部依赖没有变化，那么测试代码基本上可复用（相较于每个函数的单元测试而言，测试代码变化的概率要小得多）<li>节约开发在测试上花费的时间，也大大减少了代码更新后的测试与维护时间<li>容易做自身业务代码的性能测试，使自身代码最优化后，也更容易发现集成性能瓶颈点</ul><li>对于特别复杂的函数或算法而言，在尽量拆解复杂性之后，可以通过针对性的单元测试或调试来保证稳健性。</ul><h3 id="gomonkey"><span class="mr-2">gomonkey</span><a href="#gomonkey" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>在不得已用 mock 的情况下，推荐使用 gomonkey 这个 mock 工具。 gomonkey 基础特性列表如下：</p><ul><li>支持为一个函数打一个桩<li>支持为一个成员方法打一个桩<li>支持为一个全局变量打一个桩<li>支持为一个函数变量打一个桩<li>支持为一个函数打一个特定的桩序列<li>支持为一个成员方法打一个特定的桩序列<li>支持为一个函数变量打一个特定的桩序列</ul><p>具体可参考以下文章：</p><ul><li><a href="https://blog.csdn.net/qq_41960425/article/details/124968546">gomonkey源码解读</a><li><a href="https://blog.csdn.net/EDDYCJY/article/details/125401502?spm=1001.2101.3001.6650.14&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-14-125401502-blog-110442937.235%5Ev28%5Epc_relevant_t0_download&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-14-125401502-blog-110442937.235%5Ev28%5Epc_relevant_t0_download&amp;utm_relevant_index=15">你该刷新 gomonkey 的惯用法了</a><li><a href="http://turbock79.cn/?p=4065">Golang Mock使用入门</a><li><a href="https://zhuanlan.zhihu.com/p/410445621">GoMock快速上手教程</a><li><a href="https://www.jianshu.com/p/c23a397409ac">Go语言如何在没有实现功能的情况下写出完善的单元测试代码</a><li><a href="https://blog.csdn.net/kevin_tech/article/details/124762845">如何写出可测试的 Go 代码</a></ul><h3 id="mock易用工具"><span class="mr-2">mock易用工具</span><a href="#mock易用工具" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li><a href="https://github.com/ory/dockertest">dockertest</a><li><a href="https://github.com/orlangure/gnomock">orlangure/gnomock</a>：各种中间件的mock，单元测试或集成测试时不再需要自己写mock了<ul><li>Redis<li>Memcached<li>MySQL<li>MariaDB<li>PostgreSQL<li>MongoDB<li>RabbitMQ<li>Kafka<li>Elasticsearch</ul><li><a href="https://github.com/alicebob/miniredis">alicebob/miniredis</a>：纯go的用于单测的redis服务端代码<li><a href="https://github.com/cjsaylor/sqlfixture">cjsaylor/sqlfixture</a>：纯go的用于单测的mysql服务端代码<li><a href="https://github.com/k1LoW/grpcstub">k1LoW/grpcstub</a>：grpc测试打桩</ul><h2 id="其他参考文献"><span class="mr-2">其他参考文献</span><a href="#其他参考文献" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><ul><li><a href="https://blog.csdn.net/DisMisPres/article/details/118610983">go test 的使用</a><li><a href="https://zhuanlan.zhihu.com/p/75460846">Go单元测试实践</a><li><a href="https://zhuanlan.zhihu.com/p/335484135">Go 测试高级窍门和技巧</a><li><a href="https://blog.csdn.net/kevin_tech/article/details/129292838">Go 全场景测试工具和实践选型推荐</a><li><a href="https://zhuanlan.zhihu.com/p/359424943">Go 中的进阶测试模式</a><li><a href="https://zhuanlan.zhihu.com/p/377834750">手把手教你如何进行 Golang 单元测试</a><li><a href="https://success.blog.csdn.net/article/details/126732662?spm=1001.2101.3001.6650.3&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-3-126732662-blog-72967636.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-3-126732662-blog-72967636.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=4">GoLang 单元测试打桩和 mock</a><li><a href="https://zhuanlan.zhihu.com/p/75460846">Go单元测试实践</a><li><a href="https://zhuanlan.zhihu.com/p/299186419">Golang 单元测试：有哪些误区和实践？</a><li><a href="https://zhuanlan.zhihu.com/p/267341653">Golang 单元测试指引</a><li><a href="https://blog.csdn.net/zhanggqianglovec/article/details/127996913">Go：基于BDD的测试框架 Ginkgo 简介及实践</a><li><a href="https://www.bbsmax.com/A/mo5kPbpndw/">高效测试框架推荐之Ginkgo</a><li><a href="https://my.oschina.net/u/4628563/blog/4724007">Go 写测试必学的三个库：Ginkgo、testify 和 GoMock</a><li><a href="https://blog.csdn.net/engelman/article/details/108666360?spm=1001.2101.3001.6650.18&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-18-108666360-blog-79392500.235%5Ev28%5Epc_relevant_t0_download&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-18-108666360-blog-79392500.235%5Ev28%5Epc_relevant_t0_download&amp;utm_relevant_index=19">Ginkgo 测试框架学习笔记</a><li><a href="https://www.xieys.club/kubebuilder-ginkgo/">ginkgo 测试库</a><li><a href="https://xie.infoq.cn/article/f573bea9b1532c42204a7eb34">Golang Testing 概览 - 基本篇</a><li><a href="https://xie.infoq.cn/article/faff391ba185b256897dce436">Golang Testing 概览 - 深入篇</a><li><a href="https://xie.infoq.cn/article/d809683274f86b1059d0c1d05">Golang Testing 概览 - 补充篇</a><li><a href="https://www.liwenzhou.com/posts/Go/unit-test-0/">Go单测从零到溜系列0—单元测试基础</a><li><a href="https://www.liwenzhou.com/posts/Go/unit-test-1/">Go单测从零到溜系列1—网络测试</a><li><a href="https://www.liwenzhou.com/posts/Go/unit-test-2/">Go单测从零到溜系列2—MySQL和Redis测试</a><li><a href="https://www.liwenzhou.com/posts/Go/unit-test-3/">Go单测从零到溜系列3—mock接口测试</a><li><a href="https://www.liwenzhou.com/posts/Go/unit-test-4/">Go单测从零到溜系列4—使用monkey打桩</a><li><a href="https://www.liwenzhou.com/posts/Go/unit-test-5/">Go单测从零到溜系列5—goconvey的使用</a><li><a href="https://www.liwenzhou.com/posts/Go/unit-test-6/">Go单测从零到溜系列6—编写可测试的代码</a><li><a href="https://zhuanlan.zhihu.com/p/168539526">使用Go做测试（进阶版）</a><li><a href="https://zhuanlan.zhihu.com/p/377834750">手把手教你如何进行 Golang 单元测试</a><li><a href="https://zhuanlan.zhihu.com/p/564830481">为 go 遗留代码添加单元测试（零）</a><li><a href="https://www.jianshu.com/p/c23a397409ac">Go语言如何在没有实现功能的情况下写出完善的单元测试代码</a><li><a href="https://blog.csdn.net/zhanggqianglovec/article/details/127994832?utm_medium=distribute.pc_relevant.none-task-blog-2~default~baidujs_baidulandingword~default-1-127994832-blog-118315172.235^v27^pc_relevant_default_base1&amp;spm=1001.2101.3001.4242.2&amp;utm_relevant_index=4">Go：测试库（GoConvey，testify，GoStub，GoMonkey）对比及简介</a></ul><h1 id="性能检测工具">性能检测工具</h1><p>编码和单元测试一般聚焦在功能正确这个角度，但有时我们需要再有限资源下追求高性能（比如尽量减少CPU和内存占用、降低时延等）， 此时就需要借助性能检测工具，以找出性能瓶颈点，然后重点优化。练习pprof的使用可以点击<a href="https://github.com/wolfogre/go-pprof-practice">pprof练习</a></p><h2 id="pprof"><span class="mr-2">pprof</span><a href="#pprof" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><p>pprof 可以分析golang运行中的程序或者特定函数的性能数据，比如CPU、内存、协程等资源使用情况，以及各函数使用资源的占比等。 可通过 <code class="language-plaintext highlighter-rouge">go install github.com/google/pprof</code> 来安装 pprof。然后可以通过命令 go tool pprof 进行分析。 该命令支持多种数据源和交互模式：</p><ul><li>数据源：<ul><li>http 地址<li>已经采集并下载下来的 profile 文件： pprof -http=:8080 cpu.prof</ul><li>交互模式：<ul><li>命令行交互<li>浏览器模式(-http参数)</ul></ul><p>如果要用到可视化界面的，需要安装 graphviz</p><h3 id="使用场景"><span class="mr-2">使用场景</span><a href="#使用场景" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>一般的使用场景有以下几个：</p><ul><li>服务器程序(不主动退出)<li>非持续运行的程序(运行短暂时间后会主动退出)<li>测试代码(go test)</ul><p>已服务器程序为例。通过http采样收集一段时间后，得到相关数据然后就地分析或下载文件后他处分析。要点如下：</p><ul><li>代码中引入： import _ “net/http/pprof”<ul><li>如果程序中没有现有的 http 端口或服务，需启动一个http服务<li>该包会绑定了URL：http://localhost或ip:端口/debug/pprof/</ul><li>数据采集和查看<ul><li>概览：http://localhost或ip:端口/debug/pprof/<li>具体的profiles：http://localhost或ip:端口/debug/pprof/类型</ul></ul><p>其中类型有（打开上面的概览网址即可看到）：</p><ul><li>allocs： 内存分配情况的采样信息<li>blocks： 阻塞操作情况的采样信息<li>cmdline： 显示程序启动命令参数及其参数<li>goroutine： 显示当前所有协程的堆栈信息<li>heap： 堆上的内存分配情况的采样信息<li>mutex： 锁竞争情况的采样信息<li>profile： cpu占用情况的采样信息，点击会下载文件<li>threadcreate：系统线程创建情况的采样信息<li>trace： 程序运行跟踪信息</ul><p>非持续运行的程序、测试代码这两种场景与服务器程序(上面提到的http引入方式)的不同点如下，其他都相同：</p><ul><li>非持续运行的程序<ul><li>代码中引入包：runtime/pprof<li>使用的API函数形如：runtime.StartCPUProfile/runtime.StopCPUProfile等<li>具体示例代码可搜索网络或查阅<a href="http://www.siyueweb.cn/go%E8%AF%AD%E8%A8%80/pprof%E6%80%A7%E8%83%BD%E8%B0%83%E4%BC%98.html">pprof性能调优</a></ul><li>测试代码： go test -bench . -cpuprofile cpu.prof（其中的点号代表目录，也可以指定特定的函数），其他参数如下(替换cpuprofile的位置)：<ul><li>benchmem：打印出申请内存的次数<li>blockprofile：协程阻塞情况<li>memprofile： 协程内存申请信息<li>mutexprofile： 互斥情况<li>trace：执行调用链情况</ul></ul><p>不论哪种使用场景，最终都会得到所需的profile文件（比如CPU的、内存的）。而分析就是基于这个文件的，只不过分析的时候交互方式有所区别：</p><ul><li>网页可视化<ul><li>分析源基于http：<ul><li>以cpu为例，即URL中最后一个词profile：go tool pprof -http=:9000 http://localhost:8000/debug/pprof/profile<li>其他的分析，把URL中的最后一个词替换就行，比如聂村分配情况，可替换成 allocs<li>其他参数：采样时间 -seconds=5，例如 go tool pprof -seconds=5 -http=:9000 http://localhost:8000/debug/pprof/profile<li>数据较详细的文件：curl -o profile.out http://localhost:6060/debug/pprof/profile</ul><li>分析源基于文件：go tool pprof -http=:9000 你的文件<li><strong><em>go 1.8之前，你同时需要可执行二进制文件和数据文件，用go 1.8之后的版本编译的程序，分析时不需要指定二进制文件了</em></strong></ul><li>终端交互方式：<ul><li>命令(不需要-http选项，其他都一样，这里以文件为例)：go tool pprof cpu.prof<li>输入 web 可以查看到svg图形，其他交互命令，可通过输入 help 获取帮助</ul></ul><h3 id="分析"><span class="mr-2">分析</span><a href="#分析" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>整个分析的过程分为两步：</p><ul><li>导出数据（详情参考本文中的“使用场景”一节）<li>分析数据<ul><li>通过 top 等统计信息初步定位<li>通过可视化精细定位</ul><li>分析函数代码： 当确定出哪个函数耗时之后，可以用pprof分析函数中的哪一行导致的耗时，使用子命令：<code class="language-plaintext highlighter-rouge">list 函数名</code></ul><p>pprof的目标是生成可视化的检测报告。报告是根据采集的样本数据从一个跟节点位置开始按调用关系生成层次化的结构。 每个位置包含两个值：</p><ul><li>flat：当前位置自身消耗的值（不包含函数内的调用消耗）<li>cum：当前位置及子位置累计的消耗值（即当前函数以及所有调用的函数总消耗）</ul><p>pprof生成报告的形式有两种：文字形式和可视化图形</p><blockquote><p>文字报告</p></blockquote><p>pprof的文字报告用文字的格式展示了位置的层次结构。文字报告中有5个指标：Flat、Flat%、Sum%、Cum、Cum%</p><ul><li>Flat：函数自身运行耗时<li>Flat%：函数自身耗时比例<li>Sum%：指的就是每一行的<code class="language-plaintext highlighter-rouge">flat%</code>与上面所有行的<code class="language-plaintext highlighter-rouge">flat%</code>总和<li>Cum：当前函数加上它所有调用栈的运行总耗时<li>Cum%：当前函数加上它所有调用栈的运行总耗时比例</ul><p>举例说明：函数<code class="language-plaintext highlighter-rouge">demo</code>由三部分组成：调用函数<code class="language-plaintext highlighter-rouge">foo</code>、自己直接处理一些事情、调用函数<code class="language-plaintext highlighter-rouge">bar</code>，其中调用函数<code class="language-plaintext highlighter-rouge">foo</code>耗时1秒， 自己直接处理事情耗时3秒，调用函数<code class="language-plaintext highlighter-rouge">bar</code>耗时2秒，那么函数<code class="language-plaintext highlighter-rouge">demo</code>的<code class="language-plaintext highlighter-rouge">flat</code>耗时就是3秒，<code class="language-plaintext highlighter-rouge">cum</code>耗时就是6秒。</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">demo</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">foo</span><span class="p">()</span> <span class="c">// takes 1s</span>
+    <span class="n">do</span> <span class="n">something</span> <span class="n">directly</span> <span class="c">// takes 3s</span>
+    <span class="n">bar</span><span class="p">()</span> <span class="c">// takes 2s</span>
+<span class="p">}</span>
+</pre></table></code></div></div><blockquote><p>可视化图形报告</p></blockquote><p>web页面中经常用到的是 VIEW 菜单系列项：</p><ul><li>Top：同(pprof)中的top命令<li>Graph：连线图（展示函数调用线）<li>Flame Graph：火焰图<li>Peek：同(pprof)中的 text 命令，打印每个调用栈<li>Source：同(pprof)中的 list 命令</ul><p>如果是内存信息，则 菜单 SAMPLE 中有以下介个项：</p><ul><li>alloc_objects：已分配的对象总量（不管是否已释放）<li>alloc_space：已分配的内存总量（不管是否已释放）<li>inuse_objects： 已分配但尚未释放的对象数量<li>inuse_sapce：已分配但尚未释放的内存数量</ul><p>在图形化的包中包含节点、节点之间的边、字体三个元素。而每个元素又具有颜色和大小两个属性。</p><ul><li>连线图<ul><li>每个节点的信息包括了包名、函数名、flat、flat%、cum、cum%<li>节点的颜色越红，其cum和cum%越大<li>其颜色越灰白，则cum和cum%越小<li>线条代表了函数的调用链：线条越粗，代表指向的函数消耗了越多的资源<li>线条的样式代表了调用关系：实线代表直接调用；虚线代表中间少了几个节点</ul><li>火焰图：可以将程序的 函数调用堆栈关系和资源占比 两个信息可视化，常用用来做程序的CPU和内存的分析。<ul><li>可以分析函数执行的频繁程度<li>可以分析哪些函数经常阻塞（profie分析）<li>可以分析哪些函数频繁分配内存（heap分析）<li>火焰图两个作用：<ul><li>可视化函数调用链关系<li>可视化资源占比：跨度越大，占比资源（CPU/内存）越大</ul><li>火焰图解读：<ul><li>火焰图的横向长度表示cum，相比下面超出的一截代表flat<li>火焰图可以进行点击，细化调用关系，一层层查看更具体的细节<li>y 轴表示调用栈：每一层都是一个函数。调用栈越深，火焰就越高<li>x 轴表示抽样数：如果一个函数在 x 轴占据的宽度越宽，就表示它被抽到的次数多，即执行的时间长<li>只要有”平顶”（plateaus，即该函数占据宽度独大，没有进一步细化），就表示该函数可能存在性能问题</ul><li>火焰图互动：<ul><li>鼠标悬浮：火焰的每一层都会标注函数名，鼠标悬浮时会显示完整的函数名、抽样抽中的次数、占据总抽样次数的百分比<li>点击放大：<ul><li>在某一层点击，火焰图会水平放大，该层会占据所有宽度，显示详细信息<li>点击上一层会回到上一层调用关系，点击root则会回到最上层</ul></ul><li>搜索：按下 Ctrl + F 会显示一个搜索框，用户可以输入关键词或正则表达式，所有符合条件的函数名会高亮显示。</ul></ul><p><a href="/assets/img/go/go-001.png" class="popup img-link "><img data-src="/assets/img/go/go-001.png" alt="火焰图长度属性" class="lazyload" data-proofer-ignore></a></p><h3 id="其他类似工具"><span class="mr-2">其他类似工具</span><a href="#其他类似工具" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li>基准测试<li>promethus<li>算法时间复杂度分析大 O表示法<li>适配操作系统存储层次和缓存策略<li><a href="https://blog.csdn.net/Clovemeo/article/details/124954834?spm=1001.2101.3001.6650.19&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-19-124954834-blog-124752410.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-19-124954834-blog-124752410.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=25">使用dlv分析golang进程cpu占用高问题</a><li><a href="https://blog.csdn.net/zoudaohoutianI/article/details/127030389?spm=1001.2101.3001.6650.5&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-5-127030389-blog-124954834.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-5-127030389-blog-124954834.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=9">go程序cpu过高问题排查方法</a><li><a href="https://zhuanlan.zhihu.com/p/615356851">Go 中的性能分析和执行跟踪</a></ul><h2 id="trace"><span class="mr-2">trace</span><a href="#trace" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><p>你是否遇到过：为什么在程序中增加了并发，但并没有给它带来更好的性能？go执行跟踪程序可以帮助回答这些疑问，还有其他和其有关性能的问题，例如延迟、竞争和较低的并行效率。 在真实的程序中还包含许多的隐藏动作，例如：</p><ul><li>Goroutine 在执行时会做哪些操作？<li>Goroutine 执行/阻塞了多长时间？<li>Syscall 在什么时候被阻止？在哪里被阻止的？<li>谁又锁/解锁了 Goroutine ？<li>GC 是怎么影响到 Goroutine 的执行的？</ul><p>在引入执行trace程序之前，已经有了pprof内存和CPU分析器，那么为什么它还会被添加到官方的工具链中呢？虽然CPU分析器做了一件很好的工作， 告诉你什么函数占用了最多的CPU时间，但它并不能帮助你确定是什么阻止了goroutine运行，或者在可用的OS线程上如何调度goroutines。 这正是跟踪器真正起作用的地方。trace设计文档很好地解释了跟踪程序背后的动机以及它是如何被设计和工作的。</p><h3 id="引入trace"><span class="mr-2">引入trace</span><a href="#引入trace" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>分析trace之前需要先得到trace数据文件，才能做进一步分析：</p><ul><li>代码中引入trace<ul><li>可终止的程序中引入方式：<ul><li>在程序中引入包 runtime/trace，程序退出时会把trace信息输出到控制台<li>执行命令导出trace数据文件：go run main.go 2&gt; trace.out</ul><li>服务器程序引入方式：<ul><li>想要从一个运行的web应用收集trace, 你需要添加 /debug/pprof/trace handler。下面的代码示例展示了如何通过简单地导入 net/http/pprof 包为 http.DefaultServerMux 做到这一点。<li>curl localhost:8181/debug/pprof/trace?seconds=10 &gt; trace.out</ul></ul><li>启动可视化界面：go tool trace trace.out</ul><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+</pre><td class="rouge-code"><pre><span class="c">// 可终止的程序引入方式</span>
+<span class="k">package</span> <span class="n">main</span>
+
+<span class="k">import</span> <span class="p">(</span>    
+    <span class="s">"os"</span>
+    <span class="s">"runtime/trace"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">trace</span><span class="o">.</span><span class="n">Start</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">Stderr</span><span class="p">)</span>    
+    <span class="k">defer</span> <span class="n">trace</span><span class="o">.</span><span class="n">Stop</span><span class="p">()</span>    
+    <span class="c">// create new channel of type int</span>
+    <span class="n">ch</span> <span class="o">:=</span> <span class="nb">make</span><span class="p">(</span><span class="k">chan</span> <span class="kt">int</span><span class="p">)</span>    
+    
+    <span class="c">// start new anonymous goroutine</span>
+    <span class="k">go</span> <span class="k">func</span><span class="p">()</span> <span class="p">{</span>        
+        <span class="c">// send 42 to channel</span>
+        <span class="n">ch</span> <span class="o">&lt;-</span> <span class="m">42</span>
+    <span class="p">}()</span>    
+    <span class="c">// read from channel</span>
+    <span class="o">&lt;-</span><span class="n">ch</span>
+<span class="p">}</span>
+</pre></table></code></div></div><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+</pre><td class="rouge-code"><pre><span class="c">// 服务器程序引入方式：</span>
+<span class="k">package</span> <span class="n">main</span>
+
+<span class="k">import</span> <span class="p">(</span>    
+    <span class="s">"net/http"</span>
+    <span class="n">_</span> 
+    <span class="s">"net/http/pprof"</span>
+<span class="p">)</span>
+
+<span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">http</span><span class="o">.</span><span class="n">Handle</span><span class="p">(</span><span class="s">"/hello"</span><span class="p">,</span> <span class="n">http</span><span class="o">.</span><span class="n">HandlerFunc</span><span class="p">(</span><span class="n">helloHandler</span><span class="p">))</span>
+
+    <span class="n">http</span><span class="o">.</span><span class="n">ListenAndServe</span><span class="p">(</span><span class="s">"localhost:8181"</span><span class="p">,</span> <span class="n">http</span><span class="o">.</span><span class="n">DefaultServeMux</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">helloHandler</span><span class="p">(</span><span class="n">w</span> <span class="n">http</span><span class="o">.</span><span class="n">ResponseWriter</span><span class="p">,</span> <span class="n">r</span> <span class="o">*</span><span class="n">http</span><span class="o">.</span><span class="n">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">Write</span><span class="p">([]</span><span class="kt">byte</span><span class="p">(</span><span class="s">"hello world!"</span><span class="p">))</span>
+<span class="p">}</span>
+</pre></table></code></div></div><h3 id="可视化界面解读"><span class="mr-2">可视化界面解读</span><a href="#可视化界面解读" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>启动可视化界面之后，会出现以下项目：</p><ul><li>View trace：最复杂、最强大和交互式的可视化显示了整个程序执行的时间轴。 这个视图显示了在每个虚拟处理器上运行着什么，以及什么是被阻塞等待运行的。稍后我们将在这篇文章中深入探讨这个视图。注意它只能在chrome上显示。<li>Goroutine analysis：显示了在整个执行过程中，每种类型的goroutines是如何创建的。在选择一种类型之后就可以看到关于这种类型的goroutine的信息。 例如，在试图从mutex获取锁、从网络读取、运行等等每个goroutine被阻塞的时间。<li>Network/Sync/Syscall blocking profile：这些图表显示了goroutines在这些资源上所花费的时间。它们非常接近pprof上的内存/cpu分析。这是分析锁竞争的最佳选择。<li>Scheduler latency profiler：为调度器级别的信息提供计时功能，显示调度在哪里最耗费时间。</ul><p>在刚开始查看问题时，除非是很明显的现象，否则不应该一开始就陷入细节。界面分析步骤：</p><ul><li>先查看 Scheduler latency profile 了解一些概览信息<li>看 “Goroutine analysis”：<ul><li>我们能通过这个功能看到整个运行过程中，每个函数块有多少个有 Goroutine 在跑<li>观察每个的 Goroutine 的运行开销都花费在哪个阶段<li>每个 Goroutine 具体做了些什么事情，可通过点击具体细项去观察<li>这块能够很好的帮助我们对 Goroutine 运行阶段做一个的剖析，可以得知到底慢哪，然后再决定下一步的排查方向</ul><li>查看 “View trace”：<ul><li>在对当前程序的 Goroutine 运行分布有了初步了解后，我们再通过 “查看跟踪” 看看之间的关联性<li>具体细节可参考文章<ul><li><a href="https://blog.csdn.net/lengyue1084/article/details/124629550">Go 工程师必学：Go 大杀器之跟踪剖析 trace</a><li><a href="https://cloud.tencent.com/developer/article/2217710">go的请求追踪神器go tool trace</a></ul></ul><li>查出问题之后可以：<ul><li>修复问题前后比较 trace 数据和可视化情况<li>把问题抽象成 demo，再用 trace 工具突出分析</ul></ul><p>如果加强 trace 分析经验，可以：</p><ul><li>经常使用 trace：尽量把服务器程序本地化。<ul><li>即不依赖任何外部动态数据或组件，在本地就可以正常运行起来，并制造输入来像跑在服务器一样执行所有业务逻辑（包括外部依赖的mock）。<li>尽量不影响线上或测试环境正常运作的情况下，实现trace分析自由（具体实施方法可参考”业务测试”一节）</ul><li>制造bug或demo程序，练习或观察trace表现。<li>网络收集分析案例或者整理自己遇到过的案例</ul><h1 id="常见优化">常见优化</h1><h2 id="优化gc"><span class="mr-2">优化GC</span><a href="#优化gc" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><p>垃圾回收（Garbage Collection，简称 GC）是一种内存管理策略，由垃圾收集器以类似守护协程的方式在后台运作，按照既定的策略为用户回收那些不再被使用的对象，释放对应的内存空间.</p><ul><li>优势：<ul><li>屏蔽内存分配和释放的细节，开发人员能更好地聚焦业务逻辑实现<li>手动内存分配在大项目协作时，需要具备指针全局跟踪的视野，很容易出现内存污染或悬空指针等内存问题，导致内存bug剧增。</ul><li>劣势：<ul><li>内存自动分配自动回收，但开发人员也失去了自行分配内存的自由：将释放内存的工作委托给垃圾回收模块，研发人员得到了减负， 但同时也失去了控制主权. 除了运用有限的GC调优参数外，更多的自由度都被阉割，需要向系统看齐，服从设定.<li>增加了额外成本：全局的垃圾回收模块化零为整，会需要额外的状态信息用以存储全局的内存使用情况. 且部分时间需要中断整个程序用以支持垃圾回收工作的执行，这些都是GC额外产生的成本.</ul></ul><p>GC 在并发度复杂度高且性能不要求极致的项目中，能很好的提高开发效率。但在性能追求极致的项目中，GC可能会成为性能瓶颈。</p><h3 id="传统的gc算法"><span class="mr-2">传统的GC算法</span><a href="#传统的gc算法" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>GC 一般分为两个大的阶段，不同的 GC 算法只不过是在这两个阶段的实现上采取了不同的策略，同时为了弥补该策略带来的副作用而做了一些优化策略。</p><ul><li>标记：识别存活对象和垃圾对象<li>清扫：回收垃圾对象</ul><p>以下通过表格的形式展示常用传统GC算法。 | 算法 | 特点 | 备注 | | —- | —- | —- | | 标记清除 | 标记存活对象，清扫未标记对象 | 默认是垃圾对象，不做空间压缩或重新编排 | | 标记压缩 | 同标记清除，但清扫时会做空间压缩或重新编排 | 可减少内存碎片，但复杂度高，有性能开销 | | 半空间复制 | 每轮GC只使用空间的一般，GC 时会把存活对象转移到另一半 | 空间换时间，降低了复杂度，但浪费了一半空间 | | 引用计数 | 对象每被引用一次加1，每被删除引用一次减1，为0则被视为垃圾对象 | 很难解决循环引用和自引用问题 |</p><h3 id="go-gc-算法"><span class="mr-2">Go GC 算法</span><a href="#go-gc-算法" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>Go GC 算法有一个较长的进化过程，我们首先从较新的算法开始介绍，然后再简述其历史。目前 Go GC 算法大方向已经确定：</p><ul><li>三色标记法<li>混合写屏障机制<li>GC 和用户协程最大化并发进行</ul><p>Golang采用 TCMalloc 机制，依据对象的大小将其归属为到事先划分好的spanClass当中，这样能够消解外部碎片的问题，将问题限制在相对可控的内部碎片当中</p><h4 id="三色标记法"><span class="mr-2">三色标记法</span><a href="#三色标记法" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h4><p>对于实时系统而言，垃圾回收系统可能是一个极大的隐患，因为在垃圾回收的时候需要将整个应用程序暂停。 所以在我们设计消息总线系统的时候，需要小心地选择我们的语言。 Go一直在强调它的低延迟，但是它真的做到了吗？如果是的，它是怎么做到的呢？</p><p>把所有对象分为三类：白色、灰色、黑色。其定义如下：</p><div class="table-wrapper"><table><thead><tr><th>对象<th>特点<th>备注<tbody><tr><td>白色对象<td>GC 标记前默认的对象标记，GC 标记完成后则为垃圾对象<td>所有对象假设默认都不可达，标记完成后，不可达才视为真的不可达<tr><td>灰色对象<td>已被访问，但其直接引用的对象还未扫描完成，即至少还有一个直接引用对象未被扫描<td>表示该对象的直接引用对象还在扫描中<tr><td>黑色对象<td>该对象及其直接引用的所有对象都已被访问或标记过<td>表示已确定为可达对象（一旦灰色对象全部转为黑色，则表示标记阶段完成）</table></div><p>需要指出的是，黑色对象需要包括：</p><ul><li>不存在引用外部指针的对象<li>从 root 区域出发扫描到的对象：root 区域主要是程序运行到当前时刻的栈和全局数据区域。</ul><p>从定义中可以得到以下推论：</p><ul><li>黑色对象直接引用的所有对象，要么是黑色，要么是灰色，不可能是白色（否则意味着漏标，将被错误回收，导致致命错误）。这是三色标记算法正确性保障的前提条件。<li>所有灰色对象在GC标记结束后都会变成黑色对象<li>灰色对象可以认为是波面，该波面由白色传导到黑色，未被传导的则认为不可达，即为垃圾对象。</ul><p>三色标记过程与用户业务执行过程是并发的，可能需要考虑以下问题：</p><ul><li>已被标记为黑色的对象，在三色标记过程中被用户解除引用，造成错标。这个错误会在下一轮GC中得到纠正。可见，这只会延后垃圾对象的回收，对用户程序逻辑无影响。<li>由于起初默认是白色对象，当某个对象已经被标记为黑色对象(即改对象及其直接子对象已经标记完成)。此时用户新建了一个对象（默认为白色对象）， 并且该对象是被黑色对象引用的，GC认为该白色对象已标记完成，会错误地把该白色对象认为是垃圾对象，即发生了漏标现象。</ul><p>想要在标记过程中保证安全性，不漏标，我们需要达成以下两种三色不变式（Tri-color invariant）中的任意一种：</p><ul><li>强三色不变式：黑色对象不能指向白色对象，只能指向灰色或黑色对象；<li>弱三色不变式：黑色对象指向的白色对象，必须包含一条从灰色对象经由多个白色对象的可达路径。</ul><p>如何解决上面的漏标问题？满足三色不变式，一般可以考虑以下几种方式：</p><ul><li>读写屏障(有多种变形)：在读写操作前后插入一段代码，用于记录一些信息、保存某些数据等，概念类似于AOP。<ul><li>插入写屏障：实现强三色不变式，保证当一个黑色对象指向一个白色对象前，会先触发屏障将白色对象置为灰色，再建立引用。<li>删除写屏障：实现弱三色不变式，保证当一个白色对象即将被上游删除引用前，会触发屏障将其置灰，之后再删除上游指向其的引用。<li>混合写屏障：混合使用了插入写屏障和删除写屏障技术，为了减少对栈上对象的重复扫描（栈对象扫描需要STW）。<ul><li>GC开始将栈上的对象全部扫描并标记为黑色（之后不再进行第二次重复扫描，无需STW）<li>GC期间，任何在栈上创建的新对象，都标记为黑色<li>被删除的对象标记为灰色<li>被添加的对象标记为灰色</ul></ul><li>增量更新：通过写屏障记录GC标记过程中用户解除引用或新建对象产生的白色对象，等到垃圾清理时，STW （stop the world，指在进行垃圾回收时，会暂停应用程序的运行，以便进行垃圾回收操作。这意味着在进行垃圾回收时，应用程序将无法继续执行）对被记录下的对象再扫描一次。<li>原始快照：GC 扫描期间直接把新建对象标记为黑色</ul><p>如果一个并行 GC 收集器在处理超大内存堆时能够达到极低的延迟，那么为什么还有人在用 stop-the-world 的 GC 收集器呢？难道 Go 的 GC 收集器还不够优秀吗？ 这不是绝对的，因为低延迟是有开销的。最主要的开销就是，低延迟削减了吞吐量。并发需要额外的同步和赋值操作,而这些操作将会占用程序的处理逻辑的时间。 而 Haskell 的 GHC 则针对吞吐量进行了优化，Go 则专注于延迟，我们在考虑采用哪种语言的时候需要针对我们自己的需求进行选择， 对于推送系统这种实时性要求比较高的系统，选择Go语言则是权衡之下得到的选择。</p><h4 id="gc过程"><span class="mr-2">GC过程</span><a href="#gc过程" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h4><p>GC 相关的代码在runtime/mgc.go文件下。通过注释介绍我们可以知道 GC 一共分为4个阶段。除了走读代码了解GC过程之外，还可以借助pprof的可视化跟踪过程。</p><ul><li>sweep termination（清理终止）<ul><li>会触发 STW ，所有的 P（处理器） 都会进入 safe-point（安全点）；<li>清理未被清理的 span（一组连续的Page被称为Span，而page指的是按页分配）</ul><li>the mark phase（标记阶段）<ul><li>将 _GCoff GC 状态 改成 _GCmark，开启 Write Barrier （写入屏障）、mutator assists（协助线程），将根对象入队；<li>恢复程序执行，mark workers（标记进程）和 mutator assists（协助线程）会开始并发标记内存中的对象。对于任何指针写入和新的指针值，都会被写屏障覆盖，而所有新创建的对象都会被直接标记成黑色；<li>GC 执行根节点的标记，这包括扫描所有的栈、全局对象以及不在堆中的运行时数据结构。扫描goroutine 栈绘导致 goroutine 停止，并对栈上找到的所有指针加置灰，然后继续执行 goroutine。<li>GC 在遍历灰色对象队列的时候，会将灰色对象变成黑色，并将该对象指向的对象置灰；<li>GC 会使用分布式终止算法（distributed termination algorithm）来检测何时不再有根标记作业或灰色对象，如果没有了 GC 会转为mark termination（标记终止）</ul><li>mark termination（标记终止）<ul><li>STW，然后将 GC 阶段转为 _GCmarktermination,关闭 GC 工作线程以及 mutator assists（协助线程）；<li>执行清理，如 flush mcache</ul><li>he sweep phase（清理阶段）<ul><li>将 GC 状态转变至 _GCoff，初始化清理状态并关闭 Write Barrier（写入屏障）；<li>恢复程序执行，从此开始新创建的对象都是白色的；<li>后台并发清理所有的内存管理单元</ul></ul><p>GC 标记的工作是分配 25% 的 CPU 来进行 GC 操作，所以有可能 GC 的标记工作线程比应用程序的分配内存慢， 导致永远标记不完，那么这个时候就需要应用程序的线程来协助完成标记工作。</p><p>下面这张图显示了 gcStart 过程中状态变化，以及 STW 停顿的方法，写屏障启用的周期：</p><p><a href="/assets/img/go/go-004.png" class="popup img-link "><img data-src="/assets/img/go/go-004.png" alt="gc状态变更" class="lazyload" data-proofer-ignore></a></p><h4 id="gc优化"><span class="mr-2">GC优化</span><a href="#gc优化" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h4><p>了解了GC的触发时机和频率之后，才能对GC进行更好的优化。</p><ul><li>主动触发：runtime.GC()强制触发GC<li>申请内存时触发：Go 语言运行时的默认配置会在堆内存达到上一次垃圾收集的 2 倍时，触发新一轮的垃圾回收，这个行为可以通过 GOGC 变量调整。它的默认值为 100，即增长 100% 的堆内存才会触发 GC。 再分配内存时，判断当前内存是否达到阈值会触发新一轮GC（比如当前为 4MB，GOGC=100，4MB + 4MB * GOGC / 100）<li>系统定时触发：上次GC间隔达到了runtime.forcegcperiod（默认2分钟），会启动GC</ul><p>调优方法和总体思路（做减法，不做多余的事情）：</p><ul><li>合理化内存分配速度<li>内存池化，降低并复用已经申请的内存<li>减少对象数量，合理优化数据结构<li>减少内存使用总量<li>减少内存分配动态分配频度<li>尽可能在栈上分配内存<li>合理使用空结构体（空结构体不占用内存空间）<li>调整GOGC：事实上，这个值很难确定，可以采用手段<a href="https://blog.csdn.net/haohongfan/article/details/121378947?spm=1001.2101.3001.6650.17&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-17-121378947-blog-120696134.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-17-121378947-blog-120696134.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=18">GO 内存 ballast</a>。 ballast 的大小可以参考使用该手段之前的虚拟内存和物理内存，预估一个值。另外，可参考文章<a href="https://www.luozhiyun.com/archives/680">聊聊两个Go即将过时的GC优化策略</a></ul><p>GC 作为内存垃圾回收的组件，在检测和执行回收时会占用CPU资源，同时可能会引起业务时延的突然飙升。因此有时在以下两方面进行优化是值得的：</p><ul><li>GC 检测和标记<li>GC 执行垃圾回收</ul><blockquote><p>减少垃圾回收所用的协程数</p></blockquote><p>在Go的运行模型GMP中，每个P会运行一个gcBgMarkWorker用于垃圾回收。 是否由于P的数量不正确导致GC过多，从而CPU使用率过高？ Go程序在运行时，会使用查询到的CPU的数量作为默认的P的数量，简单地用一个Go脚本验证一下:</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>    
+    <span class="n">cpu</span> <span class="o">:=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">NumCPU</span><span class="p">()</span>    
+    <span class="n">procs</span> <span class="o">:=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">GOMAXPROCS</span><span class="p">(</span><span class="m">0</span><span class="p">)</span>
+    <span class="n">fmt</span><span class="o">.</span><span class="n">Println</span><span class="p">(</span><span class="s">"cpu num:"</span><span class="p">,</span> <span class="n">cpu</span><span class="p">,</span> <span class="s">" GOMAXPROCS:"</span><span class="p">,</span> <span class="n">procs</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>对于容器或云主机而言，可能会出现：在程序运行时读取到的CPU的数量是宿主机的CPU数量，而不是容器设置的CPU核心数量。 通过环境变量GOMAXPROCS可以设置Go运行时P的数量。</p><p>由于Go程序本身的特性，在运行时会默认读取系统的CPU核心数作为最大的并行执行线程数。 而在容器内，读取到的是宿主机的CPU核心数。 在容器被分配的CPU核心数远小于宿主机的CPU核心数的情况下， 就会发生CPU使用率异常升高的情况。 出现问题的这个服务，其业务特点就是周期性的峰值QPS极高， 所以会较为明显地观察出CPU使用率异常的现象。 通过配置环境变量 GOMAXPROCS，指定最大的并行执行线程数，可以解决CPU使用率异常的问题。 由于业务逻辑的不同，达到最佳性能的GOMAXPROCS也不同。 《The Way to Go》曾给出过一个经验公式：GOMAXPROCS=CPU数量-1。 在容器中，通常设置成申请的核心数即可。 另外，Uber开源了一个自动调整GOMAXPROCS的库：https://github.com/uber-go/automaxprocs。 具体细节参考<a href="https://blog.csdn.net/weixin_39635648/article/details/111040328">.net runtime占用cpu_Go服务在容器内CPU使用率异常问题排查手记</a>。</p><blockquote><p>减少标记阶段扫描耗时</p></blockquote><p>降低标记阶段的耗时，需要深刻了解golang语言垃圾回收的理论和代码实现机制。一般从以下方面入手：</p><ul><li>减少申请内存的次数(比如可在用户层重用内存，减少申请次数)<li>减少申请内存的对象个数(即使申请的内存大小一样，但作为一个整体使用与分割成多块来使用，效果不一样)<li>减少申请内存的频度(即使在相同时间内申请的次数相同，但时间上的分布不同，效果也不同)<li>减少GC标记扫描的次数或频度</ul><p>权衡使用指针还是内存拷贝，尽量减少指针的使用，至于优化措施是否过时（GC算法在不断优化中）， 需要借助”GC分析工具“进行验证。</p><p><em><code class="language-plaintext highlighter-rouge">优化的本质：尽最大努力不做多余的事情</code></em>。如何做到这一点：</p><ul><li>对业务逻辑充分理解，去掉多余的逻辑，减少代码堆砌；<li>对编程语言底层原理有充分的理解，使用更高效的方式实现相同的效果。<li>使用高效的数据结构，简化逻辑的复杂性</ul><h4 id="gc分析工具"><span class="mr-2">GC分析工具</span><a href="#gc分析工具" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h4><p>GC的分析工具有：</p><ul><li>go tool pprof：CPU和内存分析<li>go tool trace<li>go bulid -gcflags = “-m”：逃逸分析<li>GODEBUG=”gctrace=1”：跟踪GC行为<li>最常用的是GODEBUG=”gctrace=1”，下图中展示的是采用GODEBUG=”gctrace=1”分析GC的情况</ul><p><a href="/assets/img/go/go-002.png" class="popup img-link "><img data-src="/assets/img/go/go-002.png" alt="gctrace示例图" class="lazyload" data-proofer-ignore></a></p><p>用pprof中的cpu profile时，可以使用 top cum命令或直接对这些函数使用list命令，并将注意力集中在累计百分比列上。</p><ul><li>runtime.gcBgMarkWorker：专用标记工作goroutine的入口点。这里花费的时间与GC频率以及对象图的复杂性和大小成比例。它表示应用程序标记和扫描所用时间的基准。 注意：在一个大部分时间都处于空闲状态的Go应用程序中，Go GC会消耗额外的（空闲的）CPU资源来更快地完成任务。<li>runtime.mallocgc：堆内存的内存分配器的入口点。此处花费的大量累积时间（&gt; 15%）通常表示分配了大量内存。<li>runtime.gcAssistAlloc：goroutine进入这个函数是为了腾出一些时间来帮助GC进行扫描和标记。 这里花费的大量累积时间（&gt; 5%）表明应用程序在分配速度方面可能超过了GC。它表示GC的影响程度特别高，并且还表示应用程序在标记和扫描上花费的时间。 请注意，它包含在runtime.mallocgc调用树中，因此它也会使该调用树累计时间增加。</ul><p>在确定GC是一个巨大开销的来源之后，消除堆分配的下一步是找出它们中的大多数来自哪里。 为此，内存profile文件（实际上是堆内存profile文件）非常有用。</p><p>内存profile文件描述了程序堆中分配的来源，并通过分配时的堆栈跟踪来标识它们。每个内存profile文件可以按四种方式分析：</p><ul><li>inuse_objects：活动对象的数量<li>inuse_space：按活动对象使用的内存量（以字节为单位）<li>alloc_objects：自Go程序开始执行以来已经分配的对象数<li>alloc_space：自Go程序开始执行以来所分配的内存总量</ul><p>在这些不同的堆内存视图之间切换可以通过pprof工具的-sample_index标志来完成，或者在交互式使用该工具时通过sample_index选项来完成。</p><p>为了降低GC成本，alloc_space通常是最有用的视图，因为它直接对应于分配率。此视图将指示可提供最大益处的分配热点。</p><h4 id="gc源码导读"><span class="mr-2">GC源码导读</span><a href="#gc源码导读" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h4><p>原理需要被源码论证。go GC 经过了几个大版本的进化，如果需要知晓其优化思路与过程，可以先读最新版的源码，然后再从最老的版本读至最新版。 在读历史各个版本时，需要关注其不同点或优化点，并始终抱着以下这些问题进行：</p><ul><li>为什么需要这些优化<li>这些优化会引入什么新的问题<li>该优化在哪些场景有很好的效果<li>该优化在哪些场景却会带来更差的效果<li>还可以怎样进一步优化<li>用户基于这些优化，用户可以怎么做，从中能得到更大的好处。</ul><p>GC 演化简史：</p><ul><li>在Go1.3及之前使用的是标记清除法，其中标记清除也经历了串行处理和并行处理阶段；<li>在Go1.5实现了三色标记法，大幅的降低了STW的时间；<li>在Go1.7实现了并行的清理垃圾过程，将垃圾收集的时间大幅降低。<li>在Go1.8引入了混合写屏障，大幅的降低了标记的时间。<li>在后续的版本中基于以上算法，优化了内存分配、标记开始结束等继续对GC做了部分优化</ul><h5 id="源码文件位置"><span class="mr-2">源码文件位置</span><a href="#源码文件位置" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h5><p><a href="/assets/img/go/go-003.png" class="popup img-link "><img data-src="/assets/img/go/go-003.png" alt="gc源码导读" class="lazyload" data-proofer-ignore></a></p><div class="table-wrapper"><table><thead><tr><th>环节<th>文件位置<tbody><tr><td>主干流程<td>runtime/mgc.go<tr><td>调步策略<td>runtime/mgcspacer.go<tr><td>并发标记<td>runtime/mgcmark.go<tr><td>清扫流程<td>runtime/msweep.go</table></div><h5 id="触发gc链路"><span class="mr-2">触发GC链路</span><a href="#触发gc链路" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h5><ul><li>定时触发GC</ul><div class="table-wrapper"><table><thead><tr><th>方法<th>文件<tbody><tr><td>init<td>runtime/proc.go<tr><td>forcegchelper<td>runtime/proc.go<tr><td>main<td>runtime/proc.go<tr><td>sysmon<td>runtime/proc.go<tr><td>injectglist<td>runtime/proc.go<tr><td>gcStart<td>runtime/mgc.go<tr><td>gcTrigger.test<td>runtime/mgc.go</table></div><ul><li>对象分配触发</ul><div class="table-wrapper"><table><thead><tr><th>方法<th>文件<tbody><tr><td>mallocgc<td>runtime/malloc.go<tr><td>gcTrigger.test<td>runtime/mgc.go<tr><td>gcStart<td>runtime/mgc.go</table></div><h5 id="标记准备"><span class="mr-2">标记准备</span><a href="#标记准备" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h5><div class="table-wrapper"><table><thead><tr><th>方法<th>文件<tbody><tr><td>gcStart<td>runtime/mgc.go<tr><td>gcBgMarkStartWorkers<td>runtime/mgc.go<tr><td>gcBgMarkWorker<td>runtime/mgc.go<tr><td>stopTheWorldWithSema<td>runtime/mgc.go<tr><td>gcControllerState.startCycle<td>runtime/mgcspacer.go<tr><td>setGCPhase<td>runtime/mgc.go<tr><td>gcMarkRootPrepare<td>runtime/mgc.go<tr><td>gcMarkTinyAllocs<td>runtime/mgc.go<tr><td>startTheWorldWithSema<td>runtime/mgc.go</table></div><h5 id="并发标记"><span class="mr-2">并发标记</span><a href="#并发标记" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h5><ul><li>调度标记协程</ul><div class="table-wrapper"><table><tbody><tr><td>方法<td>文件<tr><td>schedule<td>runtime/proc.go<tr><td>findRunnable<td>runtime/proc.go<tr><td>gcControllerState.findRunnableGCWorker<td>runtime/mgcspacer.go<tr><td>execute<td>runtime/proc.go</table></div><ul><li>并发标记</ul><div class="table-wrapper"><table><tbody><tr><td>方法<td>文件<tr><td>gcBgMarkWorker<td>runtime/mgc.go<tr><td>gcDrain<td>runtime/mgcmark.go<tr><td>markroot<td>runtime/mgcmark.go<tr><td>scanobject<td>runtime/mgcmark.go<tr><td>greyobject<td>runtime/mgcmark.go<tr><td>markBits.setMarked<td>runtime/mbitmap.go<tr><td>gcWork.putFast/put<td>runtime/mgcwork.go</table></div><h5 id="标记清扫"><span class="mr-2">标记清扫</span><a href="#标记清扫" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h5><div class="table-wrapper"><table><tbody><tr><td>方法<td>文件<tr><td>gcBgMarkWorker<td>runtime/mgc.go<tr><td>gcMarkDone<td>runtime/mgc.go<tr><td>stopTheWorldWithSema<td>runtime/proc.go<tr><td>gcMarkTermination<td>runtime/mgc.go<tr><td>gcSweep<td>runtime/mgc.go<tr><td>sweepone<td>runtime/mgcsweep.go<tr><td>sweepLocked.sweep<td>runtime/mgcsweep.go<tr><td>startTheWorldWithSema<td>runtime/proc.go</table></div><h3 id="逃逸分析"><span class="mr-2">逃逸分析</span><a href="#逃逸分析" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><p>所谓逃逸分析（Escape analysis）是指由编译器决定内存分配的位置，不需要程序员指定。 函数中申请一个新的对象</p><p>如果分配在栈中，则函数执行结束可自动将内存回收； 如果分配在堆中，则函数执行结束可交给GC（垃圾回收）处理; 有了逃逸分析，返回函数局部变量将变得可能，除此之外，逃逸分析还跟闭包息息相关，了解哪些场景下对象会逃逸至关重要。</p><h4 id="逃逸策略"><span class="mr-2">逃逸策略</span><a href="#逃逸策略" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h4><p>每当函数中申请新的对象，编译器会跟据该对象是否被函数外部引用来决定是否逃逸：</p><ul><li>如果函数外部没有引用，则优先放到栈中； 注意，对于函数外部没有引用的对象，也有可能放到堆中，比如内存过大超过栈的存储能力<li>如果函数外部存在引用，则必定放到堆中；</ul><h4 id="逃逸场景"><span class="mr-2">逃逸场景</span><a href="#逃逸场景" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h4><p>通过编译参数-gcflag=-m可以查年编译过程中的逃逸分析：</p><blockquote><p>指针逃逸：返回局部变量的指针，这其实是一个典型的变量逃逸案例。</p></blockquote><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+</pre><td class="rouge-code"><pre><span class="k">package</span> <span class="n">main</span>
+
+<span class="k">type</span> <span class="n">Student</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">Name</span> <span class="kt">string</span>
+    <span class="n">Age</span>  <span class="kt">int</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">StudentRegister</span><span class="p">(</span><span class="n">name</span> <span class="kt">string</span><span class="p">,</span> <span class="n">age</span> <span class="kt">int</span><span class="p">)</span> <span class="o">*</span><span class="n">Student</span> <span class="p">{</span>
+    <span class="n">s</span> <span class="o">:=</span> <span class="nb">new</span><span class="p">(</span><span class="n">Student</span><span class="p">)</span> <span class="c">//局部变量s逃逸到堆</span>
+
+    <span class="n">s</span><span class="o">.</span><span class="n">Name</span> <span class="o">=</span> <span class="n">name</span>
+    <span class="n">s</span><span class="o">.</span><span class="n">Age</span> <span class="o">=</span> <span class="n">age</span>
+
+    <span class="k">return</span> <span class="n">s</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">StudentRegister</span><span class="p">(</span><span class="s">"Jim"</span><span class="p">,</span> <span class="m">18</span><span class="p">)</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>函数StudentRegister()内部s为局部变量，其值通过函数返回值返回， s本身为一指针，其指向的内存地址不会是栈而是堆，这就是典型的逃逸案例。</p><p>通过编译参数-gcflag=-m可以查年编译过程中的逃逸分析：</p><div class="language-shell highlighter-rouge"><div class="code-header"> <span data-label-text="Shell"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+</pre><td class="rouge-code"><pre>D:<span class="se">\S</span>ourceCode<span class="se">\G</span>oExpert<span class="se">\s</span>rc&gt;go build <span class="nt">-gcflags</span><span class="o">=</span><span class="nt">-m</span>
+<span class="c"># _/D_/SourceCode/GoExpert/src</span>
+.<span class="se">\m</span>ain.go:8: can inline StudentRegister
+.<span class="se">\m</span>ain.go:17: can inline main
+.<span class="se">\m</span>ain.go:18: inlining call to StudentRegister
+.<span class="se">\m</span>ain.go:8: leaking param: name
+.<span class="se">\m</span>ain.go:9: new<span class="o">(</span>Student<span class="o">)</span> escapes to heap
+.<span class="se">\m</span>ain.go:18: main new<span class="o">(</span>Student<span class="o">)</span> does not escape
+</pre></table></code></div></div><p>可见在StudentRegister()函数中，也即代码第9行显示”escapes to heap”， 代表该行内存分配发生了逃逸现象。</p><blockquote><p>栈空间不足逃逸</p></blockquote><p>比如以下代码是否存在逃逸，与所需内存空间有关。可通过修改make参数和 执行<code class="language-plaintext highlighter-rouge">go build -gcflags=-m</code>进行探究。</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre><td class="rouge-code"><pre><span class="k">package</span> <span class="n">main</span>
+
+<span class="k">func</span> <span class="n">Slice</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">s</span> <span class="o">:=</span> <span class="nb">make</span><span class="p">([]</span><span class="kt">int</span><span class="p">,</span> <span class="m">1000</span><span class="p">,</span> <span class="m">1000</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">_</span> <span class="o">:=</span> <span class="k">range</span> <span class="n">s</span> <span class="p">{</span>
+        <span class="n">s</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">Slice</span><span class="p">()</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>实际上当栈空间不足以存放当前对象时或无法判断当前切片长度时会将对象分配到堆中。</p><blockquote><p>动态类型逃逸</p></blockquote><p>很多函数参数为interface类型，比如fmt.Println(a …interface{})， 编译期间很难确定其参数的具体类型，也会产生逃逸。</p><blockquote><p>闭包引用逃逸</p></blockquote><p>某著名的开源框架实现了某个返回Fibonacci数列的函数：</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre><td class="rouge-code"><pre><span class="k">func</span> <span class="n">Fibonacci</span><span class="p">()</span> <span class="k">func</span><span class="p">()</span> <span class="kt">int</span> <span class="p">{</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">:=</span> <span class="m">0</span><span class="p">,</span> <span class="m">1</span>
+    <span class="k">return</span> <span class="k">func</span><span class="p">()</span> <span class="kt">int</span> <span class="p">{</span>
+        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="p">,</span> <span class="n">a</span><span class="o">+</span><span class="n">b</span>
+        <span class="k">return</span> <span class="n">a</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>该函数返回一个闭包，闭包引用了函数的局部变量a和b，使用时通过该函数获取该闭包， 然后每次执行闭包都会依次输出Fibonacci数列。 完整的示例程序如下所示：</p><div class="language-go highlighter-rouge"><div class="code-header"> <span data-label-text="Go"><i class="fas fa-code small"></i></span> <button aria-label="copy" data-title-succeed="已复制！"><i class="far fa-clipboard"></i></button></div><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+</pre><td class="rouge-code"><pre><span class="k">package</span> <span class="n">main</span>
+
+<span class="k">import</span> <span class="s">"fmt"</span>
+
+<span class="k">func</span> <span class="n">Fibonacci</span><span class="p">()</span> <span class="k">func</span><span class="p">()</span> <span class="kt">int</span> <span class="p">{</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">:=</span> <span class="m">0</span><span class="p">,</span> <span class="m">1</span>
+    <span class="k">return</span> <span class="k">func</span><span class="p">()</span> <span class="kt">int</span> <span class="p">{</span>
+        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="p">,</span> <span class="n">a</span><span class="o">+</span><span class="n">b</span>
+        <span class="k">return</span> <span class="n">a</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">func</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">f</span> <span class="o">:=</span> <span class="n">Fibonacci</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">i</span> <span class="o">:=</span> <span class="m">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="m">10</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span> <span class="p">{</span>
+        <span class="n">fmt</span><span class="o">.</span><span class="n">Printf</span><span class="p">(</span><span class="s">"Fibonacci: %d</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">f</span><span class="p">())</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>Fibonacci()函数中原本属于局部变量的a和b由于闭包的引用，不得不将二者放到堆上，以致产生逃逸。</p><blockquote><p>指针必然不逃逸的情况</p></blockquote><ul><li>指针被未发生逃逸的变量引用<li>仅仅在函数内对变量做取址操作，未将指针传出</ul><h4 id="逃逸总结"><span class="mr-2">逃逸总结</span><a href="#逃逸总结" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h4><ul><li>栈上分配的对象比在堆中分配的有更高的效率<li>栈上分配的内存不需要GC处理<li>堆上分配的内存使用完毕后会交给GC处理<li>逃逸分析目的是决定内存分配地址是栈还是堆<li>逃逸分析在编译阶段完成</ul><p>思考一下这个问题：函数传递指针真的比传值效率高吗？ 我们知道传递指针可以减少底层值的拷贝，可以提高效率，但是如果拷贝的数据量小， 由于指针传递会产生逃逸，可能会使用堆，也可能会增加GC的负担，所以传递指针不一定是高效的。</p><h2 id="其他优化"><span class="mr-2">其他优化</span><a href="#其他优化" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><ul><li><a href="https://zhuanlan.zhihu.com/p/540579752">Go 性能：你知道的越多，不知道的也就越多</a><li><a href="https://blog.csdn.net/qq_62215764/article/details/128738670?spm=1001.2101.3001.6650.2&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EYuanLiJiHua%7EPosition-2-128738670-blog-119950327.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EYuanLiJiHua%7EPosition-2-128738670-blog-119950327.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=5">Go性能优化及实践</a><li><a href="https://blog.csdn.net/weixin_52183917/article/details/127851352">Go 语言中各式各样的优化手段</a><li><a href="https://blog.csdn.net/wan212000/article/details/128791975?spm=1001.2101.3001.6650.2&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EYuanLiJiHua%7EPosition-2-128791975-blog-127851352.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EYuanLiJiHua%7EPosition-2-128791975-blog-127851352.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=3">go 性能优化</a><li><a href="https://blog.csdn.net/qq_41257365/article/details/119950327?spm=1001.2101.3001.6650.9&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-9-119950327-blog-128837754.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-9-119950327-blog-128837754.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=10">GO项目性能优化大赏</a><li><div class="table-wrapper"><table><tbody><tr><td>[郑建勋：Go程序性能分层优化<td>CPU篇](https://zhuanlan.zhihu.com/p/516942933?utm_id=0)</table></div></ul><h3 id="性能诊断"><span class="mr-2">性能诊断</span><a href="#性能诊断" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li><a href="https://zhuanlan.zhihu.com/p/345413502">golang性能诊断看这篇就够了</a><li><a href="https://blog.51cto.com/u_13700957/5276712">通过 profiling 定位 golang 性能问题 - 内存篇</a><li><a href="https://blog.csdn.net/Clovemeo/article/details/124954834?spm=1001.2101.3001.6650.19&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-19-124954834-blog-124752410.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-19-124954834-blog-124752410.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=25">使用dlv分析golang进程cpu占用高问题</a><li><a href="https://segmentfault.com/a/1190000016354758?utm_source=sf-similar-article">Go 性能调优之 —— 基准测试</a><li><a href="https://zhuanlan.zhihu.com/p/37661538">Go 云端程序的持续分析</a><li><a href="http://www.guoxiaolong.cn/blog/?id=10978">优化你的go代码的几个工具</a><li><a href="https://zhuanlan.zhihu.com/p/378001444">译文 Go 高性能系列教程之二：性能评估和分析</a><li><a href="https://zhuanlan.zhihu.com/p/235292978">Go 程序性能分析</a><li><a href="https://zhuanlan.zhihu.com/p/59542559">Go程序的问题诊断和性能调优指南</a><li><a href="https://zhuanlan.zhihu.com/p/133827972">GO的花式调优技术</a><li><a href="https://blog.csdn.net/xiaoliizi/article/details/110292895?spm=1001.2101.3001.6650.7&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-7-110292895-blog-128894472.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-7-110292895-blog-128894472.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=11">golang-性能分析（原生工具）</a><li><a href="https://blog.csdn.net/zoudaohoutianI/article/details/127030389?spm=1001.2101.3001.6650.5&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-5-127030389-blog-124954834.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-5-127030389-blog-124954834.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=9">go程序cpu过高问题排查方法</a><li><a href="https://blog.csdn.net/StarSky_Ye/article/details/106770054?spm=1001.2101.3001.6650.17&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-17-106770054-blog-80332496.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-17-106770054-blog-80332496.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=18">高cpu进程排查方法</a><li><a href="https://blog.csdn.net/weixin_30767835/article/details/99483329?spm=1001.2101.3001.6650.3&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-3-99483329-blog-121216874.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-3-99483329-blog-121216874.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=5">7种 Go 程序性能分析方法</a><li><a href="https://blog.csdn.net/raoxiaoya/article/details/118758385?spm=1001.2101.3001.6650.3&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-3-118758385-blog-92031764.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-3-118758385-blog-92031764.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=4">golang性能分析之trace</a><li><a href="https://zhuanlan.zhihu.com/p/345413502">golang性能诊断看这篇就够了</a><li><a href="https://blog.csdn.net/qq_25490573/article/details/103761814?spm=1001.2101.3001.6650.13&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-13-103761814-blog-126238823.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-13-103761814-blog-126238823.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=21">Go程序性能分析方法（一文全解）</a><li><a href="http://da.dadaaierer.com/?p=787">go 静态检查工具</a></ul><h3 id="优化定时器"><span class="mr-2">优化定时器</span><a href="#优化定时器" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li><a href="https://blog.csdn.net/oqqYuan1234567890/article/details/116404039?spm=1001.2101.3001.6650.13&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-13-116404039-blog-114579784.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-13-116404039-blog-114579784.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=14">golang timer 性能消耗</a><li><a href="https://blog.csdn.net/slphahaha/article/details/121045911?utm_medium=distribute.pc_relevant.none-task-blog-2~default~baidujs_baidulandingword~default-4-121045911-blog-116404039.235^v27^pc_relevant_default_base1&amp;spm=1001.2101.3001.4242.3&amp;utm_relevant_index=7">超硬核 Go timer 解析</a><li><a href="https://blog.51cto.com/u_15127572/2927612">Golang如何应对海量定时、延迟任务？ 转载</a></ul><h3 id="类型或数据结构优化"><span class="mr-2">类型或数据结构优化</span><a href="#类型或数据结构优化" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li><a href="https://zhuanlan.zhihu.com/p/482696822">Go 泛型使用与性能对比</a><li><a href="https://www.jb51.net/article/277250.htm">详解简单高效的Go struct优化</a><li><a href="https://blog.csdn.net/weixin_34133829/article/details/89416588?spm=1001.2101.3001.6650.15&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-15-89416588-blog-91843907.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-15-89416588-blog-91843907.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=16">map内存优化</a><li><a href="https://blog.csdn.net/q_yuhen/article/details/51314166?spm=1001.2101.3001.6650.11&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EOPENSEARCH%7ERate-11-51314166-blog-51313698.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EOPENSEARCH%7ERate-11-51314166-blog-51313698.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=12">defer滥用</a><li><a href="https://blog.csdn.net/q_yuhen/article/details/51314196?spm=1001.2101.3001.6650.7&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EOPENSEARCH%7ERate-7-51314196-blog-51314166.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EOPENSEARCH%7ERate-7-51314196-blog-51314166.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=14">闭包慎用</a><li><a href="https://blog.csdn.net/q_yuhen/article/details/51314215?spm=1001.2101.3001.6650.12&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EOPENSEARCH%7ERate-12-51314215-blog-51313698.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EOPENSEARCH%7ERate-12-51314215-blog-51313698.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=13">chan的适用场景</a><li><a href="https://segmentfault.com/a/1190000005041083">interface滥用</a><li><a href="http://www.360doc.com/content/16/0907/18/22743342_589131412.shtml">不得不用refect时的优化手段</a><li><a href="http://www.360doc.com/content/16/0907/18/22743342_589131504.shtml">chan回收</a><li><a href="https://zhuanlan.zhihu.com/p/47326380">Go语言性能优化- For Range 性能研究</a></ul><h3 id="cgo或跨语言调用优化"><span class="mr-2">cgo或跨语言调用优化</span><a href="#cgo或跨语言调用优化" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li><a href="https://latelee.blog.csdn.net/article/details/116375912?spm=1001.2101.3001.6650.11&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-11-116375912-blog-112171410.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-11-116375912-blog-112171410.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=18">Golang实践录：调用C++函数的优化</a></ul><h3 id="低级优化"><span class="mr-2">低级优化</span><a href="#低级优化" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li><a href="https://www.jianshu.com/p/24abe4db740e">Golang 性能提高技术—-低级优化</a><li><a href="https://www.jianshu.com/p/1f4d0bf80bf3?utm_campaign=studygolang.com&amp;utm_medium=studygolang.com&amp;utm_source=studygolang.com">go| go 性能优化入门之「Go代码重构：23倍的性能爆增」实践</a><li><a href="https://segmentfault.com/a/1190000016354799/">Go 性能调优之 —— 编译优化</a><li><a href="https://www.codenong.com/c3131912/">golang 高频服务延时抖动追因-升级go版本</a></ul><h3 id="综合优化"><span class="mr-2">综合优化</span><a href="#综合优化" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h3><ul><li><a href="https://zhuanlan.zhihu.com/p/482547957">Go 高性能编程技法</a><li><a href="https://zhuanlan.zhihu.com/p/482107438">GO高性能编程精华</a><li><a href="https://baijiahao.baidu.com/s?id=1712320251348988146&amp;wfr=spider&amp;for=pc">golang性能优化实践</a><li><a href="https://zhuanlan.zhihu.com/p/411531261">go语言最全优化技巧总结，值得收藏！</a><li><a href="https://zhuanlan.zhihu.com/p/614111852">高德Go生态的服务稳定性建设｜性能优化的实战总结</a><li><a href="https://segmentfault.com/a/1190000016354883?utm_source=sf-similar-article">Go 性能调优之 —— 技巧</a><li><a href="https://segmentfault.com/a/1190000016354922?utm_source=sf-similar-article">Go 性能调优之 —— 总结</a><li><a href="http://www.jiaochengji.com/a_44514">Golang号称高并发，但高并发时性能不高解决办法</a><li><a href="https://blog.csdn.net/zhanglehes/article/details/121751443">Golang性能优化技巧（三）</a><li><a href="https://www.bilibili.com/read/cv12641308">go 使用中的一些优化建议和技巧，第一篇『基础结构优化』</a><li><a href="https://www.jianshu.com/p/dc87e9c094cd">性能优化实战：百万级WebSockets和Go语言</a><li><a href="https://blog.csdn.net/qcrao/article/details/118484375">优化 Golang 分布式行情推送的性能瓶颈</a><li><a href="http://www.360doc.com/content/16/0907/18/22743342_589131460.shtml">批处理</a><li><a href="https://zhuanlan.zhihu.com/p/53284649?utm_source=wechat_timeline">大规模Go项目几乎必踏的几个坑 - Dragonboat为例</a><li><a href="https://blog.csdn.net/qq_26981997/article/details/78773487/">go 语言实践-goroutine+chan 并不是 CSP 的最佳方式</a><li><a href="https://blog.csdn.net/m0_69631269/article/details/128739756?spm=1001.2101.3001.6650.2&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EYuanLiJiHua%7EPosition-2-128739756-blog-121378947.235%5Ev29%5Epc_relevant_default_base3&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EYuanLiJiHua%7EPosition-2-128739756-blog-121378947.235%5Ev29%5Epc_relevant_default_base3&amp;utm_relevant_index=5">Go语言的自动内存管理及优化(字节跳动Balanced GC优化方案)(Day5)</a><li><a href="https://zhuanlan.zhihu.com/p/463694360">最接地气的go服务优化指南</a></ul><h1 id="原理篇">原理篇</h1><p>只有理解原理，才能：</p><ul><li>养成高性能且可读性强的代码习惯<li>理解性能工具的指标表征<li>定位性能问题<li>提出较为准确和彻底的优化方案</ul><h2 id="参考文档"><span class="mr-2">参考文档</span><a href="#参考文档" class="anchor text-muted"><i class="fas fa-hashtag"></i></a></h2><ul><li><a href="https://blog.csdn.net/smilejiasmile/article/details/124761494?spm=1001.2101.3001.6650.10&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-10-124761494-blog-127851352.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-10-124761494-blog-127851352.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=11">深入golang runtime的调度</a><li><a href="https://blog.csdn.net/uuqaz/article/details/125168968?spm=1001.2101.3001.6650.2&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-2-125168968-blog-124761494.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-2-125168968-blog-124761494.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=5">深入理解Go语言与并发编程底层原理</a><li><a href="https://gopher.blog.csdn.net/article/details/121082600?spm=1001.2101.3001.6650.17&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-17-121082600-blog-125168968.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-17-121082600-blog-125168968.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=20">Golang底层原理剖析之闭包</a><li><a href="https://skaygo.blog.csdn.net/article/details/87921438?spm=1001.2101.3001.6650.8&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-8-87921438-blog-121082600.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-8-87921438-blog-121082600.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=14">Golang中闭包的实现原理</a><li><a href="https://blog.csdn.net/pbrlovejava/article/details/128355818?utm_medium=distribute.pc_relevant.none-task-blog-2~default~baidujs_baidulandingword~default-8-128355818-blog-87921438.235^v27^pc_relevant_default_base1&amp;spm=1001.2101.3001.4242.5&amp;utm_relevant_index=11">Golang原理分析：闭包及for range延迟绑定问题原理及解决</a><li><a href="https://blog.csdn.net/Dong_chongwu/article/details/128823557?utm_medium=distribute.pc_relevant.none-task-blog-2~default~baidujs_baidulandingword~default-0-128823557-blog-125168968.235^v27^pc_relevant_default_base1&amp;spm=1001.2101.3001.4242.1&amp;utm_relevant_index=2">Go语言Channel的底层原理详解</a><li><a href="https://zhuanlan.zhihu.com/p/332399793">Go 内存对齐没有秘密</a><li><a href="http://www.guoxiaolong.cn/blog/?id=10878">深入理解 Go 语言的垃圾回收</a><li><a href="https://blog.csdn.net/hellozhxy/article/details/131049160">Golang 垃圾回收原理分析</a><li><a href="https://zhuanlan.zhihu.com/p/580722298">Go 垃圾回收原理</a><li><a href="https://www.zhihu.com/question/21615032/answer/2887107096?utm_id=0">Go 的垃圾回收机制在实践中有哪些需要注意的地方？</a><li><a href="https://blog.csdn.net/Dong_chongwu/article/details/128710443">Go的垃圾回收（GC），详细总结</a><li><a href="http://interview.wzcu.com/Golang/Go%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E6%9C%BA%E5%88%B6.html">Go的垃圾回收机制</a><li><a href="https://cloud.tencent.com/developer/article/1916989">深入Go：垃圾回收的演进</a><li><a href="https://zhuanlan.zhihu.com/p/105571503">Go 垃圾回收（四）——一次完整的回收</a><li><a href="http://www.guoxiaolong.cn/blog/?id=10739">揭秘golang垃圾回收！三色标记法深入剖析</a><li><a href="https://www.163.com/dy/article/GIBK0Q2M0518R7MO.html">揭秘golang垃圾回收！三色标记法深入剖析</a><li><a href="https://www.jianshu.com/p/94f7f489811e">Go语言实时GC - 三色标记算法</a><li><a href="https://zhuanlan.zhihu.com/p/359582221">两万字长文带你深入Go语言GC源码</a><li><a href="http://www.guoxiaolong.cn/blog/?id=12421">可视化Go内存管理</a><li><a href="https://blog.csdn.net/chinus_yan/article/details/129862405">Go 垃圾回收器指南</a><li><a href="https://gopher.blog.csdn.net/article/details/121082600?spm=1001.2101.3001.6650.17&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-17-121082600-blog-121751443.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-17-121082600-blog-121751443.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=20">Golang底层原理剖析之闭包</a><li><a href="https://www.jb51.net/article/216127.htm">go select编译期的优化处理逻辑使用场景分析</a><li><a href="https://gopher.blog.csdn.net/article/details/121369179?spm=1001.2101.3001.6650.7&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-7-121369179-blog-121082600.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-7-121369179-blog-121082600.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=13">Golang底层原理剖析专栏汇总</a><li><a href="https://blog.csdn.net/Peerless__/article/details/126763923">Golang源码探究 —— chan</a><li><a href="https://blog.csdn.net/DaXingGggg/article/details/120590455?spm=1001.2101.3001.6650.13&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-13-120590455-blog-122915998.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-13-120590455-blog-122915998.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=14">图文并茂：彻底理解Go中Chan底层同步原理</a><li><a href="https://mp.weixin.qq.com/s?__biz=MzkyMTIzMTkzNA==&amp;mid=2247566986&amp;idx=1&amp;sn=40c3846a5a328ba18b73a16d329b756f&amp;chksm=c18531dbf6f2b8cd4a93bd9aa5cad4020daf8da7a54156f754f5c2b403c58b02b40a79ed79f4&amp;scene=21#wechat_redirect">大厂后台开发基本功修炼路线和经典资料</a><li><a href="https://blog.csdn.net/weixin_42128977/article/details/127322024?spm=1001.2101.3001.6650.16&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-16-127322024-blog-126238823.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-16-127322024-blog-126238823.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=24">go-内存管理篇（二） 万字总结-golang内存分配篇</a><li><a href="https://blog.csdn.net/kevin_tech/article/details/121391666?spm=1001.2101.3001.6650.12&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-12-121391666-blog-127322024.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-12-121391666-blog-127322024.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=17">一篇文章讲清Go的内存布局和分配原理</a><li><a href="http://www.manongjc.com/detail/50-febvztjzymiaygk.html">Golang实现带优先级的channel</a></ul><h1 id="第三方库">第三方库</h1><ul><li><a href="https://www.zhihu.com/column/c_1351481752951656448">新Gopher日报</a><li><a href="http://www.kaotop.com/it/903929.html">Golang 开发 常用的第三方库 没有最全只有更全</a><li><a href="https://github.com/grpc-ecosystem/awesome-grpc#tools">Awesome gRPC</a><li><a href="https://github.com/gotomicro/ego">ego微服务框架</a><li><a href="https://github.com/ktr0731/evans">evans: 更具表现力的通用gRPC客户端</a></ul><h1 id="常见bug和分析">常见bug和分析</h1><ul><li><a href="https://mp.weixin.qq.com/s?__biz=MzA4ODg0NDkzOA==&amp;mid=2247508188&amp;idx=1&amp;sn=0de53357e099f3a252408127851b2f80&amp;chksm=90211f39a756962fb8782b577f559f9324c401282340ca4020b4c953c4ab6898d5fcd2004833&amp;scene=132#wechat_redirect">Go 泛型的二十一个陷阱</a><li><a href="https://blog.csdn.net/qq_39015563/article/details/108759934">golang runtime.systemstack 泄漏排查</a><li><a href="https://blog.csdn.net/u013272009/article/details/114579784?spm=1001.2101.3001.6650.14&amp;utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-14-114579784-blog-127030389.235%5Ev27%5Epc_relevant_default_base1&amp;depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7EBlogCommendFromBaidu%7ERate-14-114579784-blog-127030389.235%5Ev27%5Epc_relevant_default_base1&amp;utm_relevant_index=15">go 定时器泄漏，导致 CPU占用高</a></ul><h1 id="其他工具">其他工具</h1><ul><li><a href="https://mp.weixin.qq.com/s?__biz=MzI2NDU4OTExOQ==&amp;mid=2247540970&amp;idx=1&amp;sn=2df664485056860e6af54e6120414734&amp;chksm=eaa83abadddfb3ac301e1a1766f7bdc4ce3c2edd0029279ece81c6abe85fcd639a8559be4192&amp;scene=27">31个！Golang常用工具来啦</a></ul><h1 style="visibility: hidden;" id="want-cmm"> 我要评论</h1></div><div class="post-tail-wrapper text-muted"><div class="post-tail-bottom d-flex justify-content-between align-items-center mt-3 pt-5 pb-2"><div class="license-wrapper"> 本文由作者按照 <a href="https://creativecommons.org/licenses/by/4.0/"> CC BY 4.0 </a> 进行授权</div><div class="share-wrapper"> <span class="share-label text-muted mr-1">分享</span> <span class="share-icons"> <a href="https://twitter.com/intent/tweet?text=go%E4%BB%8Ebug%E4%B8%AD%E5%AD%A6%E4%B9%A0%E5%8E%9F%E7%90%86%E5%92%8C%E4%BC%98%E5%8C%96%20-%20Code-Winder&url=%2F%2Fcode-winder.github.io%2F2023%2F03%2Fgo.html" data-toggle="tooltip" data-placement="top" title="Twitter" target="_blank" rel="noopener" aria-label="Twitter"> <i class="fa-fw fab fa-twitter"></i> </a> <a href="https://www.facebook.com/sharer/sharer.php?title=go%E4%BB%8Ebug%E4%B8%AD%E5%AD%A6%E4%B9%A0%E5%8E%9F%E7%90%86%E5%92%8C%E4%BC%98%E5%8C%96%20-%20Code-Winder&u=%2F%2Fcode-winder.github.io%2F2023%2F03%2Fgo.html" data-toggle="tooltip" data-placement="top" title="Facebook" target="_blank" rel="noopener" aria-label="Facebook"> <i class="fa-fw fab fa-facebook-square"></i> </a> <a href="https://t.me/share/url?url=%2F%2Fcode-winder.github.io%2F2023%2F03%2Fgo.html&text=go%E4%BB%8Ebug%E4%B8%AD%E5%AD%A6%E4%B9%A0%E5%8E%9F%E7%90%86%E5%92%8C%E4%BC%98%E5%8C%96%20-%20Code-Winder" data-toggle="tooltip" data-placement="top" title="Telegram" target="_blank" rel="noopener" aria-label="Telegram"> <i class="fa-fw fab fa-telegram"></i> </a> <i id="copy-link" class="fa-fw fas fa-link small" data-toggle="tooltip" data-placement="top" title="分享链接" data-title-succeed="链接已复制！"> </i> </span></div></div></div></div></div><div id="panel-wrapper" class="col-xl-3 pl-2 text-muted"><div class="access"><div id="access-tags"><div class="panel-heading">热门标签</div><div class="d-flex flex-wrap mt-3 mb-1 mr-3"> <a class="post-tag" href="/tags/cpp/">Cpp</a> <a class="post-tag" href="/tags/it-basic/">IT_Basic</a> <a class="post-tag" href="/tags/tool/">Tool</a> <a class="post-tag" href="/tags/algorithm/">Algorithm</a> <a class="post-tag" href="/tags/linux/">Linux</a> <a class="post-tag" href="/tags/go/">Go</a> <a class="post-tag" href="/tags/it-basic/">IT-Basic</a> <a class="post-tag" href="/tags/think/">Think</a> <a class="post-tag" href="/tags/vim/">Vim</a></div></div></div><script> (function() { $("#content-list").click(function(event){ var e=window.event || event; if(e.stopPropagation){ e.stopPropagation(); }else{ e.cancelBubble = true; } if($('#markdown-toc').is(':hidden')){ $('#markdown-toc').show(); }else{ $('#markdown-toc').hide(); } }); $("#markdown-toc").click(function(event){ var e=window.event || event; if(e.stopPropagation){ e.stopPropagation(); }else{ e.cancelBubble = true; } }); $(document).click(function(event) { $("#markdown-toc").hide(); }); }()); </script><div id="toc-wrapper" class="pl-0 pr-4 mb-5"><div class="panel-heading pl-3 pt-2 mb-2">文章内容</div><nav id="toc" data-toggle="toc"><ul class="nav navbar-nav"><li><a href="#测试工具" class="nav-link">测试工具</a><ul class="nav navbar-nav"><li><a href="#官方原生测试包" class="nav-link">官方原生测试包</a><ul class="nav navbar-nav"><li><a href="#testingt" class="nav-link">testing.T</a><li><a href="#testingf" class="nav-link">testing.F</a><li><a href="#testingb" class="nav-link">testing.B</a><li><a href="#testingm" class="nav-link">testing.M</a><li><a href="#testingpb" class="nav-link">testing.PB</a><li><a href="#testdata-目录和-golden-文件" class="nav-link">testdata 目录和 Golden 文件</a><li><a href="#帮助函数" class="nav-link">帮助函数</a><li><a href="#示例文件" class="nav-link">示例文件</a><li><a href="#跳过函数" class="nav-link">跳过函数</a><li><a href="#并发测试" class="nav-link">并发测试</a></ul><li><a href="#testfy" class="nav-link">testfy</a><ul class="nav navbar-nav"><li><a href="#assert-包" class="nav-link">assert 包</a><li><a href="#require-包" class="nav-link">require 包</a><li><a href="#测试套件-suite" class="nav-link">测试套件 suite</a></ul><li><a href="#goconvey" class="nav-link">goconvey</a><li><a href="#mock测试" class="nav-link">mock测试</a><ul class="nav navbar-nav"><li><a href="#mock测试的缺陷" class="nav-link">mock测试的缺陷</a><li><a href="#不用mock怎么写单元测试" class="nav-link">不用Mock怎么写（单元）测试</a><li><a href="#业务测试" class="nav-link">业务测试</a><li><a href="#gomonkey" class="nav-link">gomonkey</a><li><a href="#mock易用工具" class="nav-link">mock易用工具</a></ul><li><a href="#其他参考文献" class="nav-link">其他参考文献</a></ul><li><a href="#性能检测工具" class="nav-link">性能检测工具</a><ul class="nav navbar-nav"><li><a href="#pprof" class="nav-link">pprof</a><ul class="nav navbar-nav"><li><a href="#使用场景" class="nav-link">使用场景</a><li><a href="#分析" class="nav-link">分析</a><li><a href="#其他类似工具" class="nav-link">其他类似工具</a></ul><li><a href="#trace" class="nav-link">trace</a><ul class="nav navbar-nav"><li><a href="#引入trace" class="nav-link">引入trace</a><li><a href="#可视化界面解读" class="nav-link">可视化界面解读</a></ul></ul><li><a href="#常见优化" class="nav-link">常见优化</a><ul class="nav navbar-nav"><li><a href="#优化gc" class="nav-link">优化GC</a><ul class="nav navbar-nav"><li><a href="#传统的gc算法" class="nav-link">传统的GC算法</a><li><a href="#go-gc-算法" class="nav-link">Go GC 算法</a><ul class="nav navbar-nav"><li><a href="#三色标记法" class="nav-link">三色标记法</a><li><a href="#gc过程" class="nav-link">GC过程</a><li><a href="#gc优化" class="nav-link">GC优化</a><li><a href="#gc分析工具" class="nav-link">GC分析工具</a><li><a href="#gc源码导读" class="nav-link">GC源码导读</a><ul class="nav navbar-nav"><li><a href="#源码文件位置" class="nav-link">源码文件位置</a><li><a href="#触发gc链路" class="nav-link">触发GC链路</a><li><a href="#标记准备" class="nav-link">标记准备</a><li><a href="#并发标记" class="nav-link">并发标记</a><li><a href="#标记清扫" class="nav-link">标记清扫</a></ul></ul><li><a href="#逃逸分析" class="nav-link">逃逸分析</a><ul class="nav navbar-nav"><li><a href="#逃逸策略" class="nav-link">逃逸策略</a><li><a href="#逃逸场景" class="nav-link">逃逸场景</a><li><a href="#逃逸总结" class="nav-link">逃逸总结</a></ul></ul><li><a href="#其他优化" class="nav-link">其他优化</a><ul class="nav navbar-nav"><li><a href="#性能诊断" class="nav-link">性能诊断</a><li><a href="#优化定时器" class="nav-link">优化定时器</a><li><a href="#类型或数据结构优化" class="nav-link">类型或数据结构优化</a><li><a href="#cgo或跨语言调用优化" class="nav-link">cgo或跨语言调用优化</a><li><a href="#低级优化" class="nav-link">低级优化</a><li><a href="#综合优化" class="nav-link">综合优化</a></ul></ul><li><a href="#原理篇" class="nav-link">原理篇</a><ul class="nav navbar-nav"><li><a href="#参考文档" class="nav-link">参考文档</a></ul><li><a href="#第三方库" class="nav-link">第三方库</a><li><a href="#常见bug和分析" class="nav-link">常见bug和分析</a><li><a href="#其他工具" class="nav-link">其他工具</a><li><a href="#want-cmm" class="nav-link"> 我要评论 </a></ul></nav></div></div></div><div class="row"><div id="tail-wrapper" class="col-12 col-lg-11 col-xl-9 pl-3 pr-3 pr-xl-4 mt-5"><div id="related-posts" class="mb-2 mb-sm-4"><h3 class="pt-2 mb-4 ml-1" data-toc-skip>相关文章</h3><div class="card-deck mb-4"><div class="card"> <a href="/2023/07/nacos.html"><div class="card-body"> <em class="small" data-ts="1690157234" data-df="YYYY/MM/DD" > 2023/07/24 </em><h3 class="pt-0 mt-1 mb-3" data-toc-skip>nacos杂谈</h3><div class="text-muted small"><p> 本文主要介绍 nacos 相关的一些理论知识、实践经验和验证实验。 架构简介 云原生 负载均衡器 协议 架构简介 服务注册中心架构演进 阿里巴巴为什么不用 ZooKeeper 做服务发现？ 【Nacos】一文为你揭露它的强大 保姆级教程教你学会搭建Nginx和Nacos集群 干货|深入理解分布式事务，这一篇就够了！ Zookeepe...</p></div></div></a></div><div class="card"> <a href="/2023/03/think-hard.html"><div class="card-body"> <em class="small" data-ts="1679124848" data-df="YYYY/MM/DD" > 2023/03/18 </em><h3 class="pt-0 mt-1 mb-3" data-toc-skip>本质思考</h3><div class="text-muted small"><p> 本文主要收集一些对于思维的探讨，比如本质思考、思维缺陷、思维模型等 本质思考 本质思考的习惯 精准性思考 非歧义思考 反馈式思考 多维度思考 整合式思考 适应性思考 循环式思考 ...</p></div></div></a></div><div class="card"> <a href="/2023/03/etcd.html"><div class="card-body"> <em class="small" data-ts="1677711925" data-df="YYYY/MM/DD" > 2023/03/02 </em><h3 class="pt-0 mt-1 mb-3" data-toc-skip>etcd 杂谈</h3><div class="text-muted small"><p> 本文主要对 ETCD 的相关资料进行收集，以备查阅和整理。 架构简介 etcd 应用 典型应用场景 常用工具和命令 etcd 实现原理 通讯协议 etcd 集群 etcd 故障及调优 etcd 综合 etcd 源码和常见面试题 架构简介 etcd 架构原理学习（来自etcd实战） et...</p></div></div></a></div></div></div><div class="post-navigation d-flex justify-content-between"> <a href="/2023/03/think-hard.html" class="btn btn-outline-primary" prompt="上一篇"><p>本质思考</p></a> <a href="/2023/07/nacos.html" class="btn btn-outline-primary" prompt="下一篇"><p>nacos杂谈</p></a></div></div></div></div><div id="search-result-wrapper" class="d-flex justify-content-center unloaded"><div class="col-12 col-sm-11 post-content"><div id="search-hints"><div id="access-tags"><div class="panel-heading">热门标签</div><div class="d-flex flex-wrap mt-3 mb-1 mr-3"> <a class="post-tag" href="/tags/cpp/">Cpp</a> <a class="post-tag" href="/tags/it-basic/">IT_Basic</a> <a class="post-tag" href="/tags/tool/">Tool</a> <a class="post-tag" href="/tags/algorithm/">Algorithm</a> <a class="post-tag" href="/tags/linux/">Linux</a> <a class="post-tag" href="/tags/go/">Go</a> <a class="post-tag" href="/tags/it-basic/">IT-Basic</a> <a class="post-tag" href="/tags/think/">Think</a> <a class="post-tag" href="/tags/vim/">Vim</a></div></div></div><div id="search-results" class="d-flex flex-wrap justify-content-center text-muted mt-3"></div></div></div></div><footer><div class="container pl-lg-4 pr-lg-4"><div class="d-flex justify-content-between align-items-center text-muted ml-md-3 mr-md-3"><div class="footer-left"><p class="mb-0"> © 2023 <a href="https://github.com/code-winder">code-winder</a>. <span data-toggle="tooltip" data-placement="top" title="除非另有说明，本网站上的博客文章均由作者按照知识共享署名 4.0 国际 (CC BY 4.0) 许可协议进行授权。">保留部分权利。</span></p></div><div style="text-align:center;width: 90%;"><p class="mb-0"> 总访问量 <span id="busuanzi_value_site_pv" style="color: blue;"></span> ，访客数 <span id="busuanzi_value_site_uv" style="color: blue;"></span> ，本文总阅读量 <span id="busuanzi_value_page_pv" style="color: blue;"> </span></p></div><script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><div class="footer-right"><p class="mb-0">本站由 <a href="https://jekyllrb.com" target="_blank" rel="noopener">Jekyll</a> 生成，采用 <a href="https://github.com/cotes2020/jekyll-theme-chirpy" target="_blank" rel="noopener">Chirpy</a> 主题。</p></div></div></div></footer><div id="mask"></div><a id="back-to-top" href="#" aria-label="back-to-top" class="btn btn-lg btn-box-shadow" role="button"> <i class="fas fa-angle-up"></i> </a><div id="notification" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-animation="true" data-autohide="false"><div class="toast-header"> <button type="button" class="ml-2 ml-auto close" data-dismiss="toast" aria-label="Close"> <span aria-hidden="true">&times;</span> </button></div><div class="toast-body text-center pt-0"><p class="pl-2 pr-2 mb-3">发现新版本的内容。</p><button type="button" class="btn btn-primary" aria-label="Update"> 更新 </button></div></div><script src="https://cdn.jsdelivr.net/npm/simple-jekyll-search@1.10.0/dest/simple-jekyll-search.min.js"></script> <script> SimpleJekyllSearch({ searchInput: document.getElementById('search-input'), resultsContainer: document.getElementById('search-results'), json: '/assets/js/data/search.json', searchResultTemplate: '<div class="pl-1 pr-1 pl-sm-2 pr-sm-2 pl-lg-4 pr-lg-4 pl-xl-0 pr-xl-0"> <a href="{url}">{title}</a><div class="post-meta d-flex flex-column flex-sm-row text-muted mt-1 mb-1"> {categories} {tags}</div><p>{snippet}</p></div>', noResultsText: '<p class="mt-5">搜索结果为空</p>', templateMiddleware: function(prop, value, template) { if (prop === 'categories') { if (value === '') { return `${value}`; } else { return `<div class="mr-sm-4"><i class="far fa-folder fa-fw"></i>${value}</div>`; } } if (prop === 'tags') { if (value === '') { return `${value}`; } else { return `<div><i class="fa fa-tag fa-fw"></i>${value}</div>`; } } } }); </script> <script src="https://cdn.jsdelivr.net/combine/npm/magnific-popup@1.1.0/dist/jquery.magnific-popup.min.js,npm/lazysizes@5.3.2/lazysizes.min.js,npm/clipboard@2.0.11/dist/clipboard.min.js"></script> <script src="https://cdn.jsdelivr.net/combine/npm/dayjs@1.11.6/dayjs.min.js,npm/dayjs@1.11.6/locale/zh.min.js,npm/dayjs@1.11.6/plugin/relativeTime.min.js,npm/dayjs@1.11.6/plugin/localizedFormat.min.js"></script> <script defer src="/assets/js/dist/post.min.js"></script> <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script> <script defer src="/app.js"></script> <script defer src="https://www.googletagmanager.com/gtag/js?id=UA-72449510-4"></script> <script> document.addEventListener("DOMContentLoaded", function(event) { window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', 'UA-72449510-4'); }); </script>
