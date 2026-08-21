@@ -1,0 +1,60 @@
+// ========== 段落缩进配置 ==========
+.content p {
+  text-indent: 2em;
+}
+
+// ✅只要 p 内部包含任意 img，直接取消该段落首行缩进，彻底避开 first‑child 空白节点坑
+.content p:has(img) {
+  text-indent: 0;
+}
+
+.content li p,
+.content blockquote p,
+.content pre p {
+  text-indent: 0;
+}
+
+// ========== 块代码滚动，规避 Rouge‑table + overflow chrome渲染bug ==========
+// 滚动容器提升到最外层 highlighter‑rouge，不要直接包裹table
+.content div.highlighter-rouge {
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+// 滚动条美化
+.content div.highlighter-rouge::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.content div.highlighter-rouge::-webkit-scrollbar-thumb {
+  background-color: rgba(128,128,128,0.4);
+  border-radius: 4px;
+}
+.content div.highlighter-rouge::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+// 1. mark高亮，对应Obsidian ==高亮==
+mark {
+  background-color: #fff3cd;
+  color: #212529;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.2rem;
+
+  // 暗色模式适配 Chirpy
+  @media (prefers-color-scheme: dark) {
+    background-color: #6b5820;
+    color: #f8f9fa;
+  }
+}
+
+// 2. 块锚点偏移：解决跳转后被顶部导航栏遮挡
+// 插件输出 <a id="block-id"></a>
+a[id] {
+  display: block;
+  height: 4rem;  // Chirpy导航栏高度
+  margin-top: -4rem;
+  visibility: hidden;
+  position: relative;
+}
